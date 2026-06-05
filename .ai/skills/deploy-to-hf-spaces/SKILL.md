@@ -72,6 +72,31 @@ Hugging Face Spaces aggressively cache static assets. If changes don't appear af
    ```
 3. Wait for the new build to complete before checking again
 
+## Social share preview (OG image cache)
+
+Social platforms (X/Twitter, LinkedIn, Slack, …) cache the share preview by
+image URL and rarely re-fetch on their own. To force them to pick up a new
+thumbnail, the OG image URL is **fingerprinted** with a short content hash:
+`…/thumb.auto.jpg?v=<hash>`. The hash is derived from `article.mdx`, so the URL
+only changes when the article changes.
+
+- **App page** (`*.hf.space` shares): handled automatically. `src/pages/index.astro`
+  computes the hash at build time, so `og:image` / `twitter:image` always carry the
+  current `?v=<hash>`.
+- **Space card** (`huggingface.co/spaces/...` shares - this is what X scrapes when you
+  share the Space URL): driven by the `thumbnail:` field in `README.md`, which Hugging
+  Face reads from the committed file. Refresh it before deploying:
+
+  ```bash
+  cd app && npm run og:sync   # rewrites README thumbnail: with ?v=<hash>
+  cd .. && git add README.md && git commit -m "chore: refresh OG cache token" && git push space main
+  ```
+
+Notes:
+- This only affects **new** shares; previews already posted are frozen by the platform.
+- LinkedIn/Facebook can be force-refreshed via their Post Inspector / Sharing Debugger.
+  X removed its Card Validator, so changing the URL (the `?v=` bump) is the only reliable way.
+
 ## README tag (critical)
 
 The `README.md` YAML frontmatter **must** contain:

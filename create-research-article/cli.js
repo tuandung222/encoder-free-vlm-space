@@ -3,6 +3,7 @@
 import { execSync } from "child_process";
 import fs from "fs";
 import path from "path";
+import { createHash } from "crypto";
 import { createInterface } from "readline";
 
 // =============================================================================
@@ -545,10 +546,24 @@ async function main() {
             { cwd: targetDir, stdio: "pipe" },
           );
 
-          // Update README thumbnail URL to point to the Space's own auto-generated thumb
+          // Update README thumbnail URL to point to the Space's own auto-generated thumb.
+          // Append a content hash (?v=...) so social platforms re-fetch the share
+          // preview when the article changes. Must match the hash computed in
+          // app/src/pages/index.astro (sha256 of article.mdx, 10 hex chars).
           const readmePath = path.join(targetDir, "README.md");
           const readmeContent = fs.readFileSync(readmePath, "utf8");
-          const thumbUrl = `${spaceIdToUrl(spaceId)}/thumb.auto.jpg`;
+          let ogVersion = "";
+          try {
+            const articleSource = fs.readFileSync(
+              path.join(targetDir, "app/src/content/article.mdx"),
+              "utf8",
+            );
+            ogVersion = createHash("sha256")
+              .update(articleSource)
+              .digest("hex")
+              .slice(0, 10);
+          } catch {}
+          const thumbUrl = `${spaceIdToUrl(spaceId)}/thumb.auto.jpg${ogVersion ? `?v=${ogVersion}` : ""}`;
           if (!readmeContent.includes("thumbnail:")) {
             const updated = readmeContent.replace(
               /^(tags:\n(?:\s+-[^\n]+\n?)+)/m,

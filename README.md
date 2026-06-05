@@ -13,7 +13,7 @@ tags:
   - research paper
   - scientific paper
   - data visualization
-thumbnail: https://tfrere-research-article-template.hf.space/thumb.auto.jpg
+thumbnail: https://tfrere-research-article-template.hf.space/thumb.auto.jpg?v=fb7db6207f
 ---
 <div align="center">
 

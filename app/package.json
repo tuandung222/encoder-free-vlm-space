@@ -38,6 +38,7 @@
     "export:pdf:book:simple": "node ./scripts/export-pdf-book-simple.mjs",
     "export:images": "node ./scripts/screenshot-elements.mjs",
     "export:latex": "node ./scripts/export-latex.mjs",
+    "og:sync": "node ./scripts/sync-og-version.mjs",
     "sync:template": "node ./scripts/sync-template.mjs",
     "sync:template:dry": "node ./scripts/sync-template.mjs --dry-run",
     "sync:template:force": "node ./scripts/sync-template.mjs --force",
