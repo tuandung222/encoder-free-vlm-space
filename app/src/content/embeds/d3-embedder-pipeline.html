@@ -1,0 +1,210 @@
+<div class="d3-embedder-pipeline"></div>
+<style>
+  .d3-embedder-pipeline { position: relative; }
+  .d3-embedder-pipeline svg { width: 100%; height: auto; display: block; }
+  .d3-embedder-pipeline .step-name { fill: var(--text-color); font-weight: 700; }
+  .d3-embedder-pipeline .step-shape { fill: var(--text-color); }
+  .d3-embedder-pipeline .step-note { fill: var(--muted-color); }
+  .d3-embedder-pipeline .step-num { fill: var(--text-color); font-weight: 700; }
+  .d3-embedder-pipeline .legend { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 12px; }
+  .d3-embedder-pipeline .legend-title { font-size: 12px; font-weight: 700; color: var(--text-color); }
+  .d3-embedder-pipeline .legend .items { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+  .d3-embedder-pipeline .legend .item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; color: var(--text-color); }
+  .d3-embedder-pipeline .legend .swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--border-color); }
+  .d3-embedder-pipeline .hint { margin-top: 6px; font-size: 11.5px; color: var(--muted-color); }
+</style>
+<script>
+  (() => {
+    const ensureD3 = (cb) => {
+      if (window.d3 && typeof window.d3.select === 'function') return cb();
+      let s = document.getElementById('d3-cdn-script');
+      if (!s) { s = document.createElement('script'); s.id = 'd3-cdn-script'; s.src = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js'; document.head.appendChild(s); }
+      const onReady = () => { if (window.d3 && typeof window.d3.select === 'function') cb(); };
+      s.addEventListener('load', onReady, { once: true });
+      if (window.d3) onReady();
+    };
+
+    const bootstrap = () => {
+      const scriptEl = document.currentScript;
+      let container = scriptEl ? scriptEl.previousElementSibling : null;
+      if (!(container && container.classList && container.classList.contains('d3-embedder-pipeline'))) {
+        const cs = Array.from(document.querySelectorAll('.d3-embedder-pipeline')).filter(el => !(el.dataset && el.dataset.mounted === 'true'));
+        container = cs[cs.length - 1] || null;
+      }
+      if (!container) return;
+      if (container.dataset) { if (container.dataset.mounted === 'true') return; container.dataset.mounted = 'true'; }
+      container.style.position = container.style.position || 'relative';
+
+      // Named semantic palette — the article's figure descriptions specify colours by name
+      // (purple Patchify, blue LayerNorm, green Linear, pink positional embedding). We keep
+      // them theme-aware by tinting toward --surface-bg and using --text-color for labels.
+      const PAL = { blue: '#5B9BD5', green: '#5FB97F', pink: '#E27BA4', red: '#E06C6C', purple: '#9B82DE', yellow: '#E3B25A', teal: '#46AFB0', gray: '#98A2AD' };
+      const tint = (hex, amt) => `color-mix(in oklab, ${hex} ${Math.round((amt == null ? 0.3 : amt) * 100)}%, var(--surface-bg))`;
+
+      // ---- single shared HTML tooltip (interactivity) ----
+      let tip = container.querySelector('.d3-tooltip'), tipInner;
+      if (!tip) {
+        tip = document.createElement('div'); tip.className = 'd3-tooltip';
+        Object.assign(tip.style, { position: 'absolute', top: '0', left: '0', transform: 'translate(-9999px,-9999px)', pointerEvents: 'none', maxWidth: '260px', padding: '8px 10px', borderRadius: '8px', fontSize: '12px', lineHeight: '1.4', border: '1px solid var(--border-color)', background: 'var(--surface-bg)', color: 'var(--text-color)', boxShadow: '0 4px 24px rgba(0,0,0,.18)', opacity: '0', transition: 'opacity .12s ease', zIndex: '5' });
+        tipInner = document.createElement('div'); tip.appendChild(tipInner); container.appendChild(tip);
+      } else { tipInner = tip.firstChild || tip; }
+      const showTip = (event, html) => { tipInner.innerHTML = html; const [px, py] = d3.pointer(event, container); tip.style.transform = `translate(${px + 14}px, ${py + 14}px)`; tip.style.opacity = '1'; };
+      const hideTip = () => { tip.style.opacity = '0'; };
+
+      // The six pipeline steps: [number, role color, name, shape, note, tooltip]
+      const STEPS = [
+        [1, PAL.purple, 'Patchify', '(B, C, H, W) → (B, N, C·P²)', 'Split image into N flattened patch embeddings', '<b>Patchify</b><br>Cut the image into 256 patches and flatten each to a 3072-dim vector.'],
+        [2, PAL.blue, 'LayerNorm', '(B, N, C·P²) → (B, N, C·P²)', 'Normalize each flattened patch independently', '<b>LayerNorm</b><br>Normalise each flattened patch independently.'],
+        [3, PAL.green, 'Linear', '(B, N, C·P²) → (B, N, D)', 'Project each patch embedding to the output dimension', '<b>Linear</b><br>Project each patch from 3072 → D (the decoder’s hidden size). This single matrix is the whole ‘encoder’.'],
+        [4, PAL.blue, 'LayerNorm', '(B, N, D) → (B, N, D)', 'Normalize each projected patch independently', '<b>LayerNorm</b><br>Normalise each projected patch independently.'],
+        [5, PAL.pink, 'Add pos. embedding', '(B, N, D) → (B, N, D)', 'Inject into each patch embedding info about its position in the image', '<b>Add positional embedding</b><br>Inject where each patch sits in the 16×16 grid.'],
+        [6, PAL.blue, 'LayerNorm', '(B, N, D) → (B, N, D)', 'Final normalization', '<b>LayerNorm</b><br>Final normalisation before the patches enter the decoder.']
+      ];
+
+      const VBW = 1200, VBH = 980;
+      const svg = d3.select(container).append('svg')
+        .attr('viewBox', `0 0 ${VBW} ${VBH}`)
+        .attr('preserveAspectRatio', 'xMidYMid meet')
+        .style('width', '100%').style('height', 'auto').style('display', 'block');
+
+      const defs = svg.append('defs');
+      const mk = (id, color) => defs.append('marker')
+        .attr('id', id).attr('viewBox', '0 0 10 10').attr('refX', 8).attr('refY', 5)
+        .attr('markerWidth', 7).attr('markerHeight', 7).attr('orient', 'auto-start-reverse')
+        .append('path').attr('d', 'M0,0 L10,5 L0,10 z').attr('fill', color);
+      mk('pipe-arrow', 'var(--muted-color)');
+
+      // wrap a string of words into at most maxLines lines of <= maxChars
+      function wrapNote(text, maxChars, maxLines) {
+        const words = text.split(/\s+/);
+        const lines = [];
+        let cur = '';
+        for (const w of words) {
+          const test = cur ? cur + ' ' + w : w;
+          if (test.length > maxChars && cur) { lines.push(cur); cur = w; }
+          else cur = test;
+        }
+        if (cur) lines.push(cur);
+        if (lines.length > maxLines) {
+          const head = lines.slice(0, maxLines - 1);
+          head.push(lines.slice(maxLines - 1).join(' '));
+          return head;
+        }
+        return lines;
+      }
+
+      function render() {
+        svg.selectAll('g').remove();
+
+        const MX = 24;                 // outer horizontal margin
+        const BAR_X = MX;
+        const BAR_W = VBW - MX * 2;
+        const BAR_H = 120;
+        const GAP = 28;                // vertical gap between bars (for arrow)
+        const TOP = 20;                // top padding
+
+        // column geometry inside each bar
+        const circleCX = BAR_X + 64;
+        const circleR = 26;
+        const nameX = circleCX + circleR + 24;          // operation name start
+        const shapeX = BAR_X + BAR_W / 2;               // middle third, centered
+        const noteX = BAR_X + BAR_W - 30;               // right third, right-aligned
+        const noteW = 360;                              // approx width for wrapping
+
+        STEPS.forEach((step, i) => {
+          const [num, color, name, shape, note, tipHtml] = step;
+          const by = TOP + i * (BAR_H + GAP);
+          const cy = by + BAR_H / 2;
+          const g = svg.append('g').style('cursor', 'pointer');
+
+          // bar
+          const bar = g.append('rect').attr('x', BAR_X).attr('y', by).attr('width', BAR_W).attr('height', BAR_H)
+            .attr('rx', 16).attr('ry', 16)
+            .attr('fill', tint(color, 0.18)).attr('stroke', color).attr('stroke-width', 2)
+            .style('transition', 'stroke-width .12s ease');
+
+          // numbered circle
+          g.append('circle').attr('cx', circleCX).attr('cy', cy).attr('r', circleR)
+            .attr('fill', tint(color, 0.5)).attr('stroke', color).attr('stroke-width', 2);
+          g.append('text').attr('class', 'step-num').attr('x', circleCX).attr('y', cy)
+            .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+            .attr('font-size', 22).text(num);
+
+          // operation name
+          g.append('text').attr('class', 'step-name').attr('x', nameX).attr('y', cy)
+            .attr('text-anchor', 'start').attr('dominant-baseline', 'central')
+            .attr('font-size', 19).text(name);
+
+          // shape transformation (centered, monospace-ish)
+          g.append('text').attr('class', 'step-shape').attr('x', shapeX).attr('y', cy)
+            .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+            .attr('font-size', 19)
+            .attr('font-family', 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace')
+            .text(shape);
+
+          // note (right, may wrap to 2 lines)
+          const lines = wrapNote(note, 44, 2);
+          const noteT = g.append('text').attr('class', 'step-note').attr('x', noteX)
+            .attr('text-anchor', 'end').attr('font-size', 13);
+          const startDy = -((lines.length - 1) * 16) / 2;
+          lines.forEach((line, li) => {
+            noteT.append('tspan').attr('x', noteX)
+              .attr('dy', li === 0 ? startDy : 16)
+              .attr('dominant-baseline', 'central')
+              .text(line);
+          });
+          if (lines.length === 1) noteT.attr('y', cy).attr('dominant-baseline', 'central');
+          else noteT.attr('y', cy);
+
+          // connecting arrow to next bar
+          if (i < STEPS.length - 1) {
+            const ax = BAR_X + BAR_W / 2;
+            const y1 = by + BAR_H + 4;
+            const y2 = by + BAR_H + GAP - 4;
+            g.append('path').attr('d', `M${ax},${y1} L${ax},${y2}`)
+              .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2)
+              .attr('marker-end', 'url(#pipe-arrow)');
+          }
+
+          // interactivity: hover highlight + tooltip
+          g.on('mouseenter', () => bar.attr('stroke-width', 4))
+            .on('mousemove', (e) => showTip(e, tipHtml))
+            .on('mouseleave', () => { bar.attr('stroke-width', 2); hideTip(); });
+        });
+      }
+      render();
+
+      // Legend (HTML) used as a symbol glossary; no colored swatch on items.
+      let legend = container.querySelector('.legend');
+      if (!legend) {
+        legend = document.createElement('div'); legend.className = 'legend';
+        legend.innerHTML = '<div class="legend-title">Legend</div><div class="items"></div>';
+        container.appendChild(legend);
+      }
+      const items = legend.querySelector('.items');
+      const glossary = [
+        'B = batch size',
+        'C = input channels',
+        'H, W = image height/width',
+        'P = patch size',
+        'N = number of patches',
+        'C·P² = flattened patch dimension',
+        'D = output embedding dimension'
+      ];
+      items.innerHTML = '';
+      glossary.forEach((name) => {
+        const el = document.createElement('span'); el.className = 'item';
+        const tx = document.createElement('span'); tx.textContent = name;
+        el.appendChild(tx); items.appendChild(el);
+      });
+
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover a step for what it does.'; container.appendChild(h); }
+
+      if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
+      else { window.addEventListener('resize', render); }
+    };
+
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', () => ensureD3(bootstrap), { once: true }); }
+    else { ensureD3(bootstrap); }
+  })();
+</script>

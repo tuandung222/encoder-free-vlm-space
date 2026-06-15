@@ -1,0 +1,260 @@
+<div class="d3-positional-tables"></div>
+<style>
+  .d3-positional-tables { position: relative; }
+  .d3-positional-tables svg { width: 100%; height: auto; display: block; }
+  .d3-positional-tables .panel-title { fill: var(--text-color); font-weight: 700; }
+  .d3-positional-tables .panel-sub { fill: var(--muted-color); }
+  .d3-positional-tables .axis-label { fill: var(--muted-color); }
+  .d3-positional-tables .caption { fill: var(--muted-color); }
+  .d3-positional-tables .ellip { fill: var(--muted-color); }
+  .d3-positional-tables .idx { fill: var(--text-color); }
+  .d3-positional-tables .formula { fill: var(--text-color); }
+  .d3-positional-tables .formula-sub { fill: var(--muted-color); }
+  .d3-positional-tables .frame { fill: none; stroke: var(--border-color); }
+  .d3-positional-tables rect.cell, .d3-positional-tables rect.bar, .d3-positional-tables rect.formula-box { transition: stroke-width .12s ease; }
+  .d3-positional-tables .hover { cursor: pointer; }
+  .d3-positional-tables .hint { margin-top: 6px; font-size: 11.5px; color: var(--muted-color); }
+</style>
+<script>
+  (() => {
+    const ensureD3 = (cb) => {
+      if (window.d3 && typeof window.d3.select === 'function') return cb();
+      let s = document.getElementById('d3-cdn-script');
+      if (!s) { s = document.createElement('script'); s.id = 'd3-cdn-script'; s.src = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js'; document.head.appendChild(s); }
+      const onReady = () => { if (window.d3 && typeof window.d3.select === 'function') cb(); };
+      s.addEventListener('load', onReady, { once: true });
+      if (window.d3) onReady();
+    };
+
+    const bootstrap = () => {
+      const scriptEl = document.currentScript;
+      let container = scriptEl ? scriptEl.previousElementSibling : null;
+      if (!(container && container.classList && container.classList.contains('d3-positional-tables'))) {
+        const cs = Array.from(document.querySelectorAll('.d3-positional-tables')).filter(el => !(el.dataset && el.dataset.mounted === 'true'));
+        container = cs[cs.length - 1] || null;
+      }
+      if (!container) return;
+      if (container.dataset) { if (container.dataset.mounted === 'true') return; container.dataset.mounted = 'true'; }
+      container.style.position = container.style.position || 'relative';
+
+      // Named semantic palette — the article's figure descriptions specify colours by name
+      // (green E_row column, red E_col column, highlighted yellow formula box, multicolour grid).
+      // Theme-aware: tint toward --surface-bg, labels use --text-color.
+      const PAL = { blue: '#5B9BD5', green: '#5FB97F', pink: '#E27BA4', red: '#E06C6C', purple: '#9B82DE', yellow: '#E3B25A', teal: '#46AFB0', gray: '#98A2AD' };
+      const tint = (hex, amt) => `color-mix(in oklab, ${hex} ${Math.round((amt == null ? 0.3 : amt) * 100)}%, var(--surface-bg))`;
+
+      // ---- single shared HTML tooltip (interactivity) ----
+      let tip = container.querySelector('.d3-tooltip'), tipInner;
+      if (!tip) {
+        tip = document.createElement('div'); tip.className = 'd3-tooltip';
+        Object.assign(tip.style, { position: 'absolute', top: '0', left: '0', transform: 'translate(-9999px,-9999px)', pointerEvents: 'none', maxWidth: '260px', padding: '8px 10px', borderRadius: '8px', fontSize: '12px', lineHeight: '1.4', border: '1px solid var(--border-color)', background: 'var(--surface-bg)', color: 'var(--text-color)', boxShadow: '0 4px 24px rgba(0,0,0,.18)', opacity: '0', transition: 'opacity .12s ease', zIndex: '5' });
+        tipInner = document.createElement('div'); tip.appendChild(tipInner); container.appendChild(tip);
+      } else { tipInner = tip.firstChild || tip; }
+      const showTip = (event, html) => { tipInner.innerHTML = html; const [px, py] = d3.pointer(event, container); tip.style.transform = `translate(${px + 14}px, ${py + 14}px)`; tip.style.opacity = '1'; };
+      const hideTip = () => { tip.style.opacity = '0'; };
+
+      const VBW = 1000, VBH = 620;
+      const svg = d3.select(container).append('svg')
+        .attr('viewBox', `0 0 ${VBW} ${VBH}`)
+        .attr('preserveAspectRatio', 'xMidYMid meet')
+        .style('width', '100%').style('height', 'auto').style('display', 'block');
+
+      // Multicolour rotation for the grid squares (cycles named palette).
+      const gridRot = [PAL.pink, PAL.yellow, PAL.purple, PAL.green, PAL.blue, PAL.teal];
+
+      // Cross-highlight registries: index -> array of <rect> bars in each right-panel column.
+      let rowBars, colBars;
+
+      function header(g, x, y, line1, line2) {
+        g.append('text').attr('class', 'panel-title').attr('x', x).attr('y', y)
+          .attr('font-size', 15).text(line1);
+        g.append('text').attr('class', 'panel-sub').attr('x', x).attr('y', y + 20)
+          .attr('font-size', 12.5).text(line2);
+      }
+
+      // ---- LEFT panel: full table, 16x16 grid abbreviated with ellipses ----
+      function leftPanel() {
+        const px = 8, pw = 484, py = 64, ph = VBH - 64 - 16;
+        const g = svg.append('g');
+
+        header(g, px + 8, 28, 'Full table: (16, 16, hidden_size)', '16 · 16 · hidden_size = 256 · hidden_size parameters');
+
+        g.append('rect').attr('class', 'frame').attr('x', px).attr('y', py)
+          .attr('width', pw).attr('height', ph).attr('rx', 14).attr('stroke-width', 1.5);
+
+        // Grid geometry: top 4x4 block, a gap column, far-right col (col 15), bottom 2 rows.
+        const cell = 34, gap = 8, step = cell + gap;
+        const gx0 = px + 70;          // left edge of first cell column
+        const gy0 = py + 64;          // top edge of first cell row
+        let cIdx = 0;
+        // (col, row) are the slot positions; (gi, gj) are the true grid indices i (row), j (col).
+        const sq = (col, row, gi, gj) => {
+          const cx = gx0 + col * step, cy = gy0 + row * step;
+          const color = gridRot[cIdx % gridRot.length]; cIdx++;
+          const rect = g.append('rect').attr('class', 'cell hover')
+            .attr('x', cx).attr('y', cy).attr('width', cell).attr('height', cell)
+            .attr('rx', 6).attr('ry', 6)
+            .attr('fill', tint(color, 0.32)).attr('stroke', color).attr('stroke-width', 1.5);
+          rect
+            .on('mouseenter', function () {
+              d3.select(this).attr('stroke-width', 3.5);
+              if (rowBars[gi]) rowBars[gi].attr('stroke-width', 3.5);
+              if (colBars[gj]) colBars[gj].attr('stroke-width', 3.5);
+            })
+            .on('mousemove', (e) => showTip(e, `<b>Position (${gi}, ${gj})</b><br>Full table: one independent hidden_size-dim vector.<br>Factorized: E_row[${gi}] + E_col[${gj}].`))
+            .on('mouseleave', function () {
+              d3.select(this).attr('stroke-width', 1.5);
+              if (rowBars[gi]) rowBars[gi].attr('stroke-width', 1.5);
+              if (colBars[gj]) colBars[gj].attr('stroke-width', 1.5);
+              hideTip();
+            });
+        };
+
+        // Top-left 4x4 block: slots (c,r) for c,r in 0..3 -> true indices i=r, j=c.
+        for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) sq(c, r, r, c);
+
+        // Far-right column (col 15) for rows 0..3, placed at column slot 6 -> j=15.
+        const farCol = 6;
+        for (let r = 0; r < 4; r++) sq(farCol, r, r, 15);
+
+        // Bottom 2 rows (rows 14, 15) at row slots 6,7 -> i=14,15; cols 0..3 and far col.
+        const botRows = [6, 7];
+        const botRowIdx = [14, 15];
+        botRows.forEach((rr, k) => {
+          const gi = botRowIdx[k];
+          for (let c = 0; c < 4; c++) sq(c, rr, gi, c);
+          sq(farCol, rr, gi, 15);
+        });
+
+        // Ellipsis glyphs (var(--muted-color)).
+        const ellip = (cx, cy, glyph, size) => g.append('text').attr('class', 'ellip')
+          .attr('x', cx).attr('y', cy).attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+          .attr('font-size', size == null ? 22 : size).text(glyph);
+
+        // Horizontal "⋯" between col 3 and far col, for the top 4 rows.
+        const midColX = gx0 + 5 * step - gap / 2 + cell / 2;
+        for (let r = 0; r < 4; r++) ellip(midColX, gy0 + r * step + cell / 2, '⋯');
+        // and for the bottom 2 rows
+        botRows.forEach((rr) => ellip(midColX, gy0 + rr * step + cell / 2, '⋯'));
+
+        // Vertical "⋮" between row 3 and bottom rows, for cols 0..3 and far col.
+        const midRowY = gy0 + 5 * step - gap / 2 + cell / 2;
+        for (let c = 0; c < 4; c++) ellip(gx0 + c * step + cell / 2, midRowY, '⋮');
+        // Diagonal "⋱" at the intersection of the gaps.
+        ellip(midColX, midRowY, '⋱');
+        // Far column vertical ellipsis at the row gap.
+        ellip(gx0 + farCol * step + cell / 2, midRowY, '⋮');
+
+        // Column labels above the grid (col 0, col 15).
+        g.append('text').attr('class', 'axis-label').attr('x', gx0 + cell / 2).attr('y', gy0 - 12)
+          .attr('text-anchor', 'middle').attr('font-size', 11).text('col 0');
+        g.append('text').attr('class', 'axis-label').attr('x', gx0 + farCol * step + cell / 2).attr('y', gy0 - 12)
+          .attr('text-anchor', 'middle').attr('font-size', 11).text('col 15');
+
+        // Row labels at left of grid (row 0, row 15).
+        g.append('text').attr('class', 'axis-label').attr('x', gx0 - 12).attr('y', gy0 + cell / 2)
+          .attr('text-anchor', 'end').attr('dominant-baseline', 'middle').attr('font-size', 11).text('row 0');
+        g.append('text').attr('class', 'axis-label').attr('x', gx0 - 12).attr('y', gy0 + 7 * step + cell / 2)
+          .attr('text-anchor', 'end').attr('dominant-baseline', 'middle').attr('font-size', 11).text('row 15');
+
+        // Caption under the grid.
+        const capY = gy0 + 8 * step + 24;
+        g.append('text').attr('class', 'caption').attr('x', px + pw / 2).attr('y', capY)
+          .attr('text-anchor', 'middle').attr('font-size', 12.5)
+          .text('One independent hidden_size-dim vector for each of 16·16 = 256 positions');
+      }
+
+      // ---- RIGHT panel: factorized E_row + E_col ----
+      function rightPanel() {
+        const px = 508, pw = 484, py = 64, ph = VBH - 64 - 16;
+        const g = svg.append('g');
+
+        header(g, px + 8, 28, 'Factorized: E_row (16, hidden_size) and E_col (16, hidden_size)', '(16·hidden_size) + (16·hidden_size) = 32 · hidden_size parameters');
+
+        g.append('rect').attr('class', 'frame').attr('x', px).attr('y', py)
+          .attr('width', pw).attr('height', ph).attr('rx', 14).attr('stroke-width', 1.5);
+
+        const barW = 96, barH = 30, barGap = 7, step = barH + barGap;
+        const rows = [0, 1, 2, 3, 'ellip', 14, 15];
+        const colStartY = py + 50;
+
+        // One stack of indexed bars. registry: index -> rect selection. name: 'row' | 'col'.
+        const stack = (cx, baseColor, title, registry, kind) => {
+          g.append('text').attr('class', 'panel-sub').attr('x', cx + barW / 2).attr('y', py + 32)
+            .attr('text-anchor', 'middle').attr('font-size', 13).attr('font-weight', 700)
+            .style('fill', 'var(--text-color)').text(title);
+          rows.forEach((val, i) => {
+            const by = colStartY + i * step;
+            if (val === 'ellip') {
+              g.append('text').attr('class', 'ellip').attr('x', cx + barW / 2).attr('y', by + barH / 2)
+                .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle').attr('font-size', 22).text('⋮');
+              return;
+            }
+            // Slight lightness variation top->bottom.
+            const amt = 0.42 - i * 0.02;
+            const rect = g.append('rect').attr('class', 'bar hover')
+              .attr('x', cx).attr('y', by).attr('width', barW).attr('height', barH)
+              .attr('rx', 7).attr('ry', 7)
+              .attr('fill', tint(baseColor, amt)).attr('stroke', baseColor).attr('stroke-width', 1.5);
+            registry[val] = rect;
+            const label = kind === 'row'
+              ? `<b>E_row[${val}]</b><br>Learned hidden_size-dim vector encoding ‘this patch is in row ${val}’.`
+              : `<b>E_col[${val}]</b><br>Learned hidden_size-dim vector encoding ‘this patch is in column ${val}’.`;
+            rect
+              .on('mouseenter', function () { d3.select(this).attr('stroke-width', 3.5); })
+              .on('mousemove', (e) => showTip(e, label))
+              .on('mouseleave', function () { d3.select(this).attr('stroke-width', 1.5); hideTip(); });
+            g.append('text').attr('class', 'idx').attr('x', cx + barW / 2).attr('y', by + barH / 2)
+              .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle').attr('font-size', 12)
+              .style('pointer-events', 'none').text(val);
+          });
+        };
+
+        const gapBetween = 70;
+        const totalW = barW * 2 + gapBetween;
+        const leftX = px + (pw - totalW) / 2;
+        const rightX = leftX + barW + gapBetween;
+
+        rowBars = {}; colBars = {};
+        stack(leftX, PAL.green, 'E_row', rowBars, 'row');   // GREEN column
+        stack(rightX, PAL.red, 'E_col', colBars, 'col');    // RED column
+
+        // Highlighted YELLOW formula box at the bottom.
+        const boxW = pw - 60, boxX = px + 30;
+        const boxH = 78;
+        const boxY = py + ph - boxH - 26;
+        const fbox = g.append('rect').attr('class', 'formula-box hover')
+          .attr('x', boxX).attr('y', boxY).attr('width', boxW).attr('height', boxH)
+          .attr('rx', 12).attr('ry', 12)
+          .attr('fill', tint(PAL.yellow, 0.32)).attr('stroke', PAL.yellow).attr('stroke-width', 2);
+        fbox
+          .on('mouseenter', function () { d3.select(this).attr('stroke-width', 4); })
+          .on('mousemove', (e) => showTip(e, '<b>Factorized positional embedding</b><br>Add one row vector + one column vector instead of storing all 256 — 65,536 vs 524,288 params (8× fewer).'))
+          .on('mouseleave', function () { d3.select(this).attr('stroke-width', 2); hideTip(); });
+        const bcx = boxX + boxW / 2;
+        g.append('text').attr('class', 'formula').attr('x', bcx).attr('y', boxY + 32)
+          .attr('text-anchor', 'middle').attr('font-size', 16).style('pointer-events', 'none')
+          .text('pos_embed(i, j) = E_row[i] + E_col[j]');
+        g.append('text').attr('class', 'formula-sub').attr('x', bcx).attr('y', boxY + 56)
+          .attr('text-anchor', 'middle').attr('font-size', 12).style('pointer-events', 'none')
+          .text('Factorized positional embedding for position (i, j)');
+      }
+
+      function render() {
+        svg.selectAll('g').remove();
+        // Right panel first so the bar registries exist before left-grid hover wiring runs.
+        rightPanel();
+        leftPanel();
+      }
+      render();
+
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover a grid cell to see its row + column factors.'; container.appendChild(h); }
+
+      if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
+      else { window.addEventListener('resize', render); }
+    };
+
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', () => ensureD3(bootstrap), { once: true }); }
+    else { ensureD3(bootstrap); }
+  })();
+</script>

@@ -1,0 +1,128 @@
+<div class="d3-resize-crop"></div>
+<style>
+  .d3-resize-crop { position: relative; }
+  .d3-resize-crop svg { width: 100%; height: auto; display: block; }
+  .d3-resize-crop .title { fill: var(--text-color); font-weight: 700; }
+  .d3-resize-crop .cap { fill: var(--muted-color); }
+  .d3-resize-crop .crop-line { fill: none; stroke: var(--text-color); stroke-width: 2; stroke-dasharray: 6 5; }
+  .d3-resize-crop .zone { cursor: pointer; }
+  .d3-resize-crop .hint { margin-top: 6px; font-size: 11.5px; color: var(--muted-color); }
+</style>
+<script>
+  (() => {
+    const ensureD3 = (cb) => {
+      if (window.d3 && typeof window.d3.select === 'function') return cb();
+      let s = document.getElementById('d3-cdn-script');
+      if (!s) { s = document.createElement('script'); s.id = 'd3-cdn-script'; s.src = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js'; document.head.appendChild(s); }
+      const onReady = () => { if (window.d3 && typeof window.d3.select === 'function') cb(); };
+      s.addEventListener('load', onReady, { once: true });
+      if (window.d3) onReady();
+    };
+
+    const bootstrap = () => {
+      const scriptEl = document.currentScript;
+      let container = scriptEl ? scriptEl.previousElementSibling : null;
+      if (!(container && container.classList && container.classList.contains('d3-resize-crop'))) {
+        const cs = Array.from(document.querySelectorAll('.d3-resize-crop')).filter(el => !(el.dataset && el.dataset.mounted === 'true'));
+        container = cs[cs.length - 1] || null;
+      }
+      if (!container) return;
+      if (container.dataset) { if (container.dataset.mounted === 'true') return; container.dataset.mounted = 'true'; }
+      container.style.position = container.style.position || 'relative';
+
+      const PAL = { blue: '#5B9BD5', green: '#5FB97F', pink: '#E27BA4', purple: '#9B82DE', yellow: '#E3B25A', teal: '#46AFB0' };
+      const LOGO = '/hf-logo.svg';
+
+      let tip = container.querySelector('.d3-tooltip'), tipInner;
+      if (!tip) {
+        tip = document.createElement('div'); tip.className = 'd3-tooltip';
+        Object.assign(tip.style, { position: 'absolute', top: '0', left: '0', transform: 'translate(-9999px,-9999px)', pointerEvents: 'none', maxWidth: '250px', padding: '8px 10px', borderRadius: '8px', fontSize: '12px', lineHeight: '1.4', border: '1px solid var(--border-color)', background: 'var(--surface-bg)', color: 'var(--text-color)', boxShadow: '0 4px 24px rgba(0,0,0,.18)', opacity: '0', transition: 'opacity .12s ease', zIndex: '5' });
+        tipInner = document.createElement('div'); tip.appendChild(tipInner); container.appendChild(tip);
+      } else { tipInner = tip.firstChild || tip; }
+      const showTip = (event, html) => { tipInner.innerHTML = html; const [px, py] = d3.pointer(event, container); tip.style.transform = `translate(${px + 14}px, ${py + 14}px)`; tip.style.opacity = '1'; };
+      const hideTip = () => { tip.style.opacity = '0'; };
+      const zone = (sel, html) => sel.attr('class', 'zone')
+        .on('mousemove', (e) => showTip(e, html)).on('mouseleave', hideTip);
+
+      const VBW = 780, VBH = 400;
+      const svg = d3.select(container).append('svg')
+        .attr('viewBox', `0 0 ${VBW} ${VBH}`).attr('preserveAspectRatio', 'xMidYMid meet')
+        .style('width', '100%').style('height', 'auto').style('display', 'block');
+      const defs = svg.append('defs');
+      defs.append('marker').attr('id', 'rc-arrow').attr('viewBox', '0 0 10 10').attr('refX', 8).attr('refY', 5)
+        .attr('markerWidth', 7).attr('markerHeight', 7).attr('orient', 'auto-start-reverse')
+        .append('path').attr('d', 'M0,0 L10,5 L0,10 z').attr('fill', 'var(--muted-color)');
+
+      // Draw the real Hugging Face logo as the "image" inside a square (x,y,S).
+      function drawFace(g, x, y, S) {
+        const pad = S * 0.08, d = S - 2 * pad;
+        const im = g.append('image')
+          .attr('x', x + pad).attr('y', y + pad).attr('width', d).attr('height', d)
+          .attr('preserveAspectRatio', 'xMidYMid meet');
+        im.attr('href', LOGO);
+        im.node().setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', LOGO);
+      }
+      const imgBg = (g, x, y, w, h) => g.append('rect').attr('x', x).attr('y', y).attr('width', w).attr('height', h)
+        .attr('rx', 6).attr('fill', `color-mix(in oklab, ${PAL.teal} 16%, var(--surface-bg))`)
+        .attr('stroke', 'var(--border-color)').attr('stroke-width', 1);
+
+      function render() {
+        svg.selectAll('g').remove();
+
+        // ---- Panel 1: the original image (landscape, larger than 512×512) ----
+        const p1x = 28, p1y = 84, p1w = 360, p1h = 232;
+        const S = p1h;                       // the central square = the crop region
+        const sqx = p1x + (p1w - S) / 2, sqy = p1y;
+        const g1 = svg.append('g');
+        imgBg(g1, p1x, p1y, p1w, p1h);
+        // clip the logo to the image rect so nothing spills
+        const clipId = 'rc-clip';
+        defs.selectAll('#' + clipId).remove();
+        defs.append('clipPath').attr('id', clipId).append('rect').attr('x', p1x).attr('y', p1y).attr('width', p1w).attr('height', p1h).attr('rx', 6);
+        const inner = g1.append('g').attr('clip-path', `url(#${clipId})`);
+        drawFace(inner, sqx, sqy, S);
+        // dim the two side strips that CenterCrop discards
+        const stripW = (p1w - S) / 2;
+        [[p1x, 'left'], [sqx + S, 'right']].forEach(([sx]) => {
+          const z = g1.append('rect').attr('x', sx).attr('y', p1y).attr('width', stripW).attr('height', p1h)
+            .attr('fill', 'var(--surface-bg)').attr('fill-opacity', 0.55);
+          zone(z, '<b>Cropped away</b><br><code>CenterCrop(512)</code> discards these side strips — only the central square is kept.');
+        });
+        // dashed crop outline + hitbox
+        g1.append('rect').attr('class', 'crop-line').attr('x', sqx).attr('y', sqy).attr('width', S).attr('height', S);
+        zone(g1.append('rect').attr('x', sqx).attr('y', sqy).attr('width', S).attr('height', S).attr('fill', 'transparent'),
+          '<b>Central 512×512</b><br>The square the crop keeps. The shorter side was first resized to 512.');
+        svg.append('text').attr('class', 'title').attr('x', p1x + p1w / 2).attr('y', p1y - 28).attr('text-anchor', 'middle').attr('font-size', 16).text('image — larger than 512×512');
+        svg.append('text').attr('class', 'cap').attr('x', p1x + p1w / 2).attr('y', p1y - 10).attr('text-anchor', 'middle').attr('font-size', 12.5).text('shorter side resized to 512');
+        svg.append('text').attr('class', 'cap').attr('x', sqx + S / 2).attr('y', p1y + p1h + 20).attr('text-anchor', 'middle').attr('font-size', 12).text('central 512×512');
+
+        // ---- arrow ----
+        const ay = p1y + p1h / 2;
+        svg.append('path').attr('d', `M${p1x + p1w + 12},${ay} L${p1x + p1w + 78},${ay}`)
+          .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2.5).attr('marker-end', 'url(#rc-arrow)');
+        svg.append('text').attr('class', 'cap').attr('x', p1x + p1w + 45).attr('y', ay - 12).attr('text-anchor', 'middle').attr('font-size', 12).text('center-crop');
+
+        // ---- Panel 2: the 512×512 result ----
+        const S2 = 210, p2x = p1x + p1w + 92, p2y = ay - S2 / 2;
+        const g2 = svg.append('g');
+        imgBg(g2, p2x, p2y, S2, S2);
+        const clip2 = 'rc-clip2'; defs.selectAll('#' + clip2).remove();
+        defs.append('clipPath').attr('id', clip2).append('rect').attr('x', p2x).attr('y', p2y).attr('width', S2).attr('height', S2).attr('rx', 6);
+        const inner2 = g2.append('g').attr('clip-path', `url(#${clip2})`);
+        drawFace(inner2, p2x, p2y, S2);
+        zone(g2.append('rect').attr('x', p2x).attr('y', p2y).attr('width', S2).attr('height', S2).attr('fill', 'transparent'),
+          '<b>512 × 512</b><br>Every image — big or small — ends up this exact shape, ready to be patchified.');
+        svg.append('text').attr('class', 'title').attr('x', p2x + S2 / 2).attr('y', p2y - 16).attr('text-anchor', 'middle').attr('font-size', 16).text('512 × 512');
+        svg.append('text').attr('class', 'cap').attr('x', p2x + S2 / 2).attr('y', p2y + S2 + 20).attr('text-anchor', 'middle').attr('font-size', 12).text('fed to the embedder');
+      }
+      render();
+
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover the image regions to see what is kept vs. cropped away.'; container.appendChild(h); }
+      if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
+      else { window.addEventListener('resize', render); }
+    };
+
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', () => ensureD3(bootstrap), { once: true }); }
+    else { ensureD3(bootstrap); }
+  })();
+</script>

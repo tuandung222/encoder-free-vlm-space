@@ -1,0 +1,127 @@
+<div class="d3-image-text-sequence"></div>
+<style>
+  .d3-image-text-sequence { position: relative; }
+  .d3-image-text-sequence svg { width: 100%; height: auto; display: block; }
+  .d3-image-text-sequence .chip-text { fill: var(--text-color); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .d3-image-text-sequence .grp-label { fill: var(--muted-color); }
+  .d3-image-text-sequence .ellipsis { fill: var(--muted-color); }
+  .d3-image-text-sequence .brace { stroke: var(--border-color); fill: none; }
+  .d3-image-text-sequence .node { cursor: pointer; }
+  .d3-image-text-sequence .node rect { transition: stroke-width .12s ease; }
+  .d3-image-text-sequence .hint { margin-top: 6px; font-size: 11.5px; color: var(--muted-color); }
+</style>
+<script>
+  (() => {
+    const ensureD3 = (cb) => {
+      if (window.d3 && typeof window.d3.select === 'function') return cb();
+      let s = document.getElementById('d3-cdn-script');
+      if (!s) { s = document.createElement('script'); s.id = 'd3-cdn-script'; s.src = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js'; document.head.appendChild(s); }
+      const onReady = () => { if (window.d3 && typeof window.d3.select === 'function') cb(); };
+      s.addEventListener('load', onReady, { once: true });
+      if (window.d3) onReady();
+    };
+
+    const bootstrap = () => {
+      const scriptEl = document.currentScript;
+      let container = scriptEl ? scriptEl.previousElementSibling : null;
+      if (!(container && container.classList && container.classList.contains('d3-image-text-sequence'))) {
+        const cs = Array.from(document.querySelectorAll('.d3-image-text-sequence')).filter(el => !(el.dataset && el.dataset.mounted === 'true'));
+        container = cs[cs.length - 1] || null;
+      }
+      if (!container) return;
+      if (container.dataset) { if (container.dataset.mounted === 'true') return; container.dataset.mounted = 'true'; }
+      container.style.position = container.style.position || 'relative';
+
+      // Named semantic palette, consistent with the other figures.
+      const PAL = { blue: '#5B9BD5', green: '#5FB97F', pink: '#E27BA4', red: '#E06C6C', purple: '#9B82DE', yellow: '#E3B25A', teal: '#46AFB0', gray: '#98A2AD' };
+      const tint = (hex, amt) => `color-mix(in oklab, ${hex} ${Math.round((amt == null ? 0.3 : amt) * 100)}%, var(--surface-bg))`;
+
+      let tip = container.querySelector('.d3-tooltip'), tipInner;
+      if (!tip) {
+        tip = document.createElement('div'); tip.className = 'd3-tooltip';
+        Object.assign(tip.style, { position: 'absolute', top: '0', left: '0', transform: 'translate(-9999px,-9999px)', pointerEvents: 'none', maxWidth: '260px', padding: '8px 10px', borderRadius: '8px', fontSize: '12px', lineHeight: '1.4', border: '1px solid var(--border-color)', background: 'var(--surface-bg)', color: 'var(--text-color)', boxShadow: '0 4px 24px rgba(0,0,0,.18)', opacity: '0', transition: 'opacity .12s ease', zIndex: '5' });
+        tipInner = document.createElement('div'); tip.appendChild(tipInner); container.appendChild(tip);
+      } else { tipInner = tip.firstChild || tip; }
+      const showTip = (event, html) => { tipInner.innerHTML = html; const [px, py] = d3.pointer(event, container); tip.style.transform = `translate(${px + 14}px, ${py + 14}px)`; tip.style.opacity = '1'; };
+      const hideTip = () => { tip.style.opacity = '0'; };
+
+      const VBW = 1000, VBH = 200;
+      const svg = d3.select(container).append('svg')
+        .attr('viewBox', `0 0 ${VBW} ${VBH}`).attr('preserveAspectRatio', 'xMidYMid meet')
+        .style('width', '100%').style('height', 'auto').style('display', 'block');
+      const defs = svg.append('defs');
+      defs.append('marker').attr('id', 'its-arrow').attr('viewBox', '0 0 10 10').attr('refX', 8).attr('refY', 5)
+        .attr('markerWidth', 7).attr('markerHeight', 7).attr('orient', 'auto-start-reverse')
+        .append('path').attr('d', 'M0,0 L10,5 L0,10 z').attr('fill', 'var(--muted-color)');
+
+      const CY = 70, CH = 46;
+      function chip(g, x, w, color, label, mono) {
+        const rect = g.append('rect').attr('x', x).attr('y', CY - CH / 2).attr('width', w).attr('height', CH)
+          .attr('rx', 9).attr('fill', tint(color, 0.32)).attr('stroke', color).attr('stroke-width', 1.6);
+        g.append('text').attr('class', mono ? 'chip-text' : 'chip-text').attr('x', x + w / 2).attr('y', CY)
+          .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+          .attr('font-size', mono ? 14 : 15).attr('font-family', mono ? null : 'inherit').text(label);
+        return rect;
+      }
+      // bracket under a group: └────┘ shape, with a label below
+      function brace(g, x1, x2, label, labelLines) {
+        const yTop = CY + CH / 2 + 12, yBot = yTop + 8;
+        g.append('path').attr('class', 'brace').attr('stroke-width', 1.5)
+          .attr('d', `M${x1},${yTop} L${x1},${yBot} L${x2},${yBot} L${x2},${yTop}`);
+        const cx = (x1 + x2) / 2;
+        const t = g.append('text').attr('class', 'grp-label').attr('x', cx).attr('y', yBot + 18)
+          .attr('text-anchor', 'middle').attr('font-size', 12.5);
+        (labelLines || [label]).forEach((ln, i) => t.append('tspan').attr('x', cx).attr('dy', i === 0 ? 0 : 15).text(ln));
+      }
+      const hoverable = (g, rects, html) => g.attr('class', 'node')
+        .on('mouseenter', () => rects.forEach(r => r.attr('stroke-width', 3.4)))
+        .on('mousemove', (e) => showTip(e, html))
+        .on('mouseleave', () => { rects.forEach(r => r.attr('stroke-width', 1.6)); hideTip(); });
+
+      function render() {
+        svg.selectAll('g').remove();
+
+        // ---- image group: 256 <|image|> placeholder slots (3 shown + ellipsis) ----
+        const imgG = svg.append('g');
+        const iw = 96, gap = 10;
+        let x = 24;
+        const imgRects = [];
+        imgRects.push(chip(imgG, x, iw, PAL.blue, '<|image|>', true)); x += iw + gap;
+        imgRects.push(chip(imgG, x, iw, PAL.blue, '<|image|>', true)); x += iw + gap;
+        imgG.append('text').attr('class', 'ellipsis').attr('x', x + 14).attr('y', CY).attr('dominant-baseline', 'central').attr('font-size', 20).text('⋯'); x += 38;
+        imgRects.push(chip(imgG, x, iw, PAL.blue, '<|image|>', true)); x += iw;
+        const imgRight = x;
+        brace(imgG, 24, imgRight, null, ['256 patch embeddings']);
+        hoverable(imgG, imgRects, '<b>256 image slots</b><br>Placeholder <code>&lt;|image|&gt;</code> tokens — at forward time their embeddings are overwritten with the patch embeddings from the vision embedder.');
+
+        // ---- text group: the question, as ordinary text tokens ----
+        const txtG = svg.append('g');
+        const words = ['What', 'colour', 'is', 'the', 'car?'];
+        let tx = imgRight + 60;
+        const txtStart = tx;
+        const txtRects = [];
+        words.forEach(w => { const ww = Math.max(48, 13 + w.length * 9.5); txtRects.push(chip(txtG, tx, ww, PAL.purple, w, false)); tx += ww + 8; });
+        const txtRight = tx - 8;
+        brace(txtG, txtStart, txtRight, null, ['text tokens', "(from the LM's embedding table)"]);
+        hoverable(txtG, txtRects, "<b>Text tokens</b><br>The user's question, turned into embeddings by the language model's own embedding table.");
+
+        // ---- arrow + generated answer ----
+        svg.append('path').attr('d', `M${txtRight + 14},${CY} L${txtRight + 54},${CY}`)
+          .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2).attr('marker-end', 'url(#its-arrow)');
+        const ansG = svg.append('g');
+        const ansX = txtRight + 64, ansW = VBW - ansX - 16;
+        const ansRect = chip(ansG, ansX, Math.min(ansW, 110), PAL.pink, 'Blue.', false);
+        brace(ansG, ansX, ansX + Math.min(ansW, 110), null, ['generated']);
+        hoverable(ansG, [ansRect], '<b>Generated answer</b><br>The decoder predicts this text one token at a time, attending over image + text together.');
+      }
+      render();
+
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover the image slots, text tokens, or answer for details.'; container.appendChild(h); }
+      if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
+      else { window.addEventListener('resize', render); }
+    };
+
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', () => ensureD3(bootstrap), { once: true }); }
+    else { ensureD3(bootstrap); }
+  })();
+</script>

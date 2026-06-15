@@ -1,0 +1,155 @@
+<div class="d3-patchify-shapes"></div>
+<style>
+  .d3-patchify-shapes { position: relative; }
+  .d3-patchify-shapes svg { width: 100%; height: auto; display: block; }
+  .d3-patchify-shapes .box-title { fill: var(--text-color); font-weight: 700; }
+  .d3-patchify-shapes .box-sub { fill: var(--muted-color); }
+  .d3-patchify-shapes .op-tag { fill: var(--text-color); font-weight: 700; }
+  .d3-patchify-shapes .node { cursor: pointer; }
+  .d3-patchify-shapes .node rect { transition: stroke-width .12s ease, filter .12s ease; }
+  .d3-patchify-shapes .hint { margin-top: 6px; font-size: 11.5px; color: var(--muted-color); }
+</style>
+<script>
+  (() => {
+    const ensureD3 = (cb) => {
+      if (window.d3 && typeof window.d3.select === 'function') return cb();
+      let s = document.getElementById('d3-cdn-script');
+      if (!s) { s = document.createElement('script'); s.id = 'd3-cdn-script'; s.src = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js'; document.head.appendChild(s); }
+      const onReady = () => { if (window.d3 && typeof window.d3.select === 'function') cb(); };
+      s.addEventListener('load', onReady, { once: true });
+      if (window.d3) onReady();
+    };
+
+    const bootstrap = () => {
+      const scriptEl = document.currentScript;
+      let container = scriptEl ? scriptEl.previousElementSibling : null;
+      if (!(container && container.classList && container.classList.contains('d3-patchify-shapes'))) {
+        const cs = Array.from(document.querySelectorAll('.d3-patchify-shapes')).filter(el => !(el.dataset && el.dataset.mounted === 'true'));
+        container = cs[cs.length - 1] || null;
+      }
+      if (!container) return;
+      if (container.dataset) { if (container.dataset.mounted === 'true') return; container.dataset.mounted = 'true'; }
+      container.style.position = container.style.position || 'relative';
+
+      // Named semantic palette — the article's figure descriptions specify colours by name
+      // (blue shape boxes, yellow operation tags). We keep them theme-aware by tinting toward
+      // --surface-bg and using --text-color for labels.
+      const PAL = { blue: '#5B9BD5', green: '#5FB97F', pink: '#E27BA4', red: '#E06C6C', purple: '#9B82DE', yellow: '#E3B25A', teal: '#46AFB0', gray: '#98A2AD' };
+      const tint = (hex, amt) => `color-mix(in oklab, ${hex} ${Math.round((amt == null ? 0.3 : amt) * 100)}%, var(--surface-bg))`;
+
+      // ---- single shared HTML tooltip (interactivity) ----
+      let tip = container.querySelector('.d3-tooltip'), tipInner;
+      if (!tip) {
+        tip = document.createElement('div'); tip.className = 'd3-tooltip';
+        Object.assign(tip.style, { position: 'absolute', top: '0', left: '0', transform: 'translate(-9999px,-9999px)', pointerEvents: 'none', maxWidth: '260px', padding: '8px 10px', borderRadius: '8px', fontSize: '12px', lineHeight: '1.4', border: '1px solid var(--border-color)', background: 'var(--surface-bg)', color: 'var(--text-color)', boxShadow: '0 4px 24px rgba(0,0,0,.18)', opacity: '0', transition: 'opacity .12s ease', zIndex: '5' });
+        tipInner = document.createElement('div'); tip.appendChild(tipInner); container.appendChild(tip);
+      } else { tipInner = tip.firstChild || tip; }
+      const showTip = (event, html) => { tipInner.innerHTML = html; const [px, py] = d3.pointer(event, container); tip.style.transform = `translate(${px + 14}px, ${py + 14}px)`; tip.style.opacity = '1'; };
+      const hideTip = () => { tip.style.opacity = '0'; };
+
+      const VBW = 1400, VBH = 360;
+      const svg = d3.select(container).append('svg')
+        .attr('viewBox', `0 0 ${VBW} ${VBH}`)
+        .attr('preserveAspectRatio', 'xMidYMid meet')
+        .style('width', '100%').style('height', 'auto').style('display', 'block');
+
+      const defs = svg.append('defs');
+      const mk = (id, color) => defs.append('marker')
+        .attr('id', id).attr('viewBox', '0 0 10 10').attr('refX', 8).attr('refY', 5)
+        .attr('markerWidth', 7).attr('markerHeight', 7).attr('orient', 'auto-start-reverse')
+        .append('path').attr('d', 'M0,0 L10,5 L0,10 z').attr('fill', color);
+      mk('patchify-arrow', 'var(--muted-color)');
+
+      // a rounded blue box with a centered big title, a wrapped caption underneath, and a hover tooltip
+      function box(g, x, y, w, h, fill, title, sub, tipHtml) {
+        const grp = g.append('g').attr('class', 'node');
+        const rect = grp.append('rect').attr('x', x).attr('y', y).attr('width', w).attr('height', h)
+          .attr('rx', 14).attr('ry', 14)
+          .attr('fill', tint(fill, 0.3)).attr('stroke', fill).attr('stroke-width', 2);
+        const cx = x + w / 2;
+        grp.append('text').attr('class', 'box-title').attr('x', cx)
+          .attr('y', y + h / 2).attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+          .attr('font-size', 22).text(title);
+        if (sub && sub.length) {
+          const t = svg.append('text').attr('class', 'box-sub').attr('x', cx)
+            .attr('y', y + h + 24).attr('text-anchor', 'middle').attr('font-size', 12.5);
+          sub.forEach((line, i) => t.append('tspan').attr('x', cx).attr('dy', i === 0 ? 0 : 15).text(line));
+        }
+        if (tipHtml) {
+          grp.on('mouseenter', () => rect.attr('stroke-width', 4))
+            .on('mousemove', (e) => showTip(e, tipHtml))
+            .on('mouseleave', () => { rect.attr('stroke-width', 2); hideTip(); });
+        }
+        return grp;
+      }
+
+      // an arrow between two boxes with a yellow rounded op tag (hoverable) above its midpoint
+      function arrow(g, x1, x2, y, label, tipHtml) {
+        g.append('path').attr('d', `M${x1},${y} L${x2},${y}`)
+          .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2)
+          .attr('marker-end', 'url(#patchify-arrow)');
+        const cx = (x1 + x2) / 2;
+        const tagW = 88, tagH = 30, tagY = y - 22 - tagH;
+        const tagGrp = g.append('g').attr('class', 'node');
+        const rect = tagGrp.append('rect').attr('x', cx - tagW / 2).attr('y', tagY).attr('width', tagW).attr('height', tagH)
+          .attr('rx', 8).attr('ry', 8)
+          .attr('fill', tint(PAL.yellow, 0.35)).attr('stroke', PAL.yellow).attr('stroke-width', 2);
+        tagGrp.append('text').attr('class', 'op-tag').attr('x', cx).attr('y', tagY + tagH / 2)
+          .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+          .attr('font-size', 14).text(label);
+        if (tipHtml) {
+          tagGrp.on('mouseenter', () => rect.attr('stroke-width', 4))
+            .on('mousemove', (e) => showTip(e, tipHtml))
+            .on('mouseleave', () => { rect.attr('stroke-width', 2); hideTip(); });
+        }
+      }
+
+      const boxes = [
+        { title: '(B, C, H, W)', sub: ['(B, 3, 512, 512)', 'input image batch'],
+          tip: '<b>Input image batch</b><br>B images, C=3 colour channels, H×W = 512×512 pixels.' },
+        { title: '(B, C, nh, P, nw, P)', sub: ['(B, 3, 16, 32, 16, 32)', 'split H, W into (num patches, patch size)'],
+          tip: '<b>reshape</b><br>Split H and W into (num patches nh/nw, patch size P=32). No data moved yet.' },
+        { title: '(B, nh, nw, C, P, P)', sub: ['(B, 16, 16, 3, 32, 32)', 'patch indices moved to front'],
+          tip: '<b>permute</b><br>Move the two patch indices to the front and group each patch’s C·P·P pixels together.' },
+        { title: '(B, N, C·P²)', sub: ['(B, 256, 3072)', 'N = 256 flattened patches, each a 3072-dim vector'],
+          tip: '<b>reshape</b><br>Flatten each patch into one contiguous vector. N=256 patches, each 3·32·32 = 3072-dim.' }
+      ];
+      const ops = [
+        { label: 'reshape', tip: '<b>reshape</b><br>splits/merges axes, no copy' },
+        { label: 'permute', tip: '<b>permute</b><br>reorders axes so each patch’s pixels are contiguous' },
+        { label: 'reshape', tip: '<b>reshape</b><br>splits/merges axes, no copy' }
+      ];
+
+      function render() {
+        svg.selectAll('g').remove();
+        svg.selectAll('text.box-sub').remove();
+
+        const n = boxes.length;
+        const margin = 40, gap = 96, boxH = 80;
+        const boxW = (VBW - 2 * margin - (n - 1) * gap) / n;
+        const boxY = 110;
+        const midY = boxY + boxH / 2;
+
+        const xs = [];
+        for (let i = 0; i < n; i++) xs.push(margin + i * (boxW + gap));
+
+        boxes.forEach((b, i) => box(svg.append('g'), xs[i], boxY, boxW, boxH, PAL.blue, b.title, b.sub, b.tip));
+
+        for (let i = 0; i < n - 1; i++) {
+          const x1 = xs[i] + boxW + 2;
+          const x2 = xs[i + 1] - 4;
+          arrow(svg.append('g'), x1, x2, midY, ops[i].label, ops[i].tip);
+        }
+      }
+      render();
+
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover any box or tag for details.'; container.appendChild(h); }
+
+      if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
+      else { window.addEventListener('resize', render); }
+    };
+
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', () => ensureD3(bootstrap), { once: true }); }
+    else { ensureD3(bootstrap); }
+  })();
+</script>

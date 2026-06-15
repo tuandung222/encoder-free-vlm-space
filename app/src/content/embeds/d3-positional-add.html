@@ -1,0 +1,174 @@
+<div class="d3-positional-add"></div>
+<style>
+  .d3-positional-add { position: relative; }
+  .d3-positional-add svg { width: 100%; height: auto; display: block; }
+  .d3-positional-add .title { fill: var(--text-color); font-weight: 700; }
+  .d3-positional-add .bar-text { fill: var(--text-color); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .d3-positional-add .row-label { fill: var(--text-color); }
+  .d3-positional-add .row-annot { fill: var(--muted-color); }
+  .d3-positional-add .op { fill: var(--text-color); font-weight: 700; }
+  .d3-positional-add .hint { margin-top: 6px; font-size: 11.5px; color: var(--muted-color); }
+</style>
+<script>
+  (() => {
+    const ensureD3 = (cb) => {
+      if (window.d3 && typeof window.d3.select === 'function') return cb();
+      let s = document.getElementById('d3-cdn-script');
+      if (!s) { s = document.createElement('script'); s.id = 'd3-cdn-script'; s.src = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js'; document.head.appendChild(s); }
+      const onReady = () => { if (window.d3 && typeof window.d3.select === 'function') cb(); };
+      s.addEventListener('load', onReady, { once: true });
+      if (window.d3) onReady();
+    };
+
+    const bootstrap = () => {
+      const scriptEl = document.currentScript;
+      let container = scriptEl ? scriptEl.previousElementSibling : null;
+      if (!(container && container.classList && container.classList.contains('d3-positional-add'))) {
+        const cs = Array.from(document.querySelectorAll('.d3-positional-add')).filter(el => !(el.dataset && el.dataset.mounted === 'true'));
+        container = cs[cs.length - 1] || null;
+      }
+      if (!container) return;
+      if (container.dataset) { if (container.dataset.mounted === 'true') return; container.dataset.mounted = 'true'; }
+      container.style.position = container.style.position || 'relative';
+
+      // Named semantic palette — the article describes the bars by colour
+      // (blue patch embedding, green positional embedding, red/pink result). We keep
+      // them theme-aware by tinting toward --surface-bg and using --text-color for labels.
+      const PAL = { blue: '#5B9BD5', green: '#5FB97F', pink: '#E27BA4', red: '#E06C6C', purple: '#9B82DE', yellow: '#E3B25A', teal: '#46AFB0', gray: '#98A2AD' };
+      const tint = (hex, amt) => `color-mix(in oklab, ${hex} ${Math.round((amt == null ? 0.3 : amt) * 100)}%, var(--surface-bg))`;
+
+      // ---- single shared HTML tooltip (interactivity) ----
+      let tip = container.querySelector('.d3-tooltip'), tipInner;
+      if (!tip) {
+        tip = document.createElement('div'); tip.className = 'd3-tooltip';
+        Object.assign(tip.style, { position: 'absolute', top: '0', left: '0', transform: 'translate(-9999px,-9999px)', pointerEvents: 'none', maxWidth: '260px', padding: '8px 10px', borderRadius: '8px', fontSize: '12px', lineHeight: '1.4', border: '1px solid var(--border-color)', background: 'var(--surface-bg)', color: 'var(--text-color)', boxShadow: '0 4px 24px rgba(0,0,0,.18)', opacity: '0', transition: 'opacity .12s ease', zIndex: '5' });
+        tipInner = document.createElement('div'); tip.appendChild(tipInner); container.appendChild(tip);
+      } else { tipInner = tip.firstChild || tip; }
+      const showTip = (event, html) => { tipInner.innerHTML = html; const [px, py] = d3.pointer(event, container); tip.style.transform = `translate(${px + 14}px, ${py + 14}px)`; tip.style.opacity = '1'; };
+      const hideTip = () => { tip.style.opacity = '0'; };
+
+      const VBW = 1000, VBH = 460;
+      const svg = d3.select(container).append('svg')
+        .attr('viewBox', `0 0 ${VBW} ${VBH}`)
+        .attr('preserveAspectRatio', 'xMidYMid meet')
+        .style('width', '100%').style('height', 'auto').style('display', 'block');
+
+      // Bar geometry
+      const BAR_X = 300, BAR_W = 360, BAR_H = 58, BAR_RX = 12;
+      const BAR_CX = BAR_X + BAR_W / 2;
+      const LABEL_RIGHT = 285;   // right edge for right-anchored left labels
+      const ANNOT_X = 680;       // left edge for right-side annotations
+
+      const rows = [
+        {
+          color: PAL.blue,
+          vec: '[0.3, -0.1, 0.8, ...]',
+          label: 'patch at pos. (4, 5):',
+          annot: ['← flattened patch embedding'],
+          tip: '<b>Patch embedding</b><br>What a patch looks like — but with no information about where it sits in the image.'
+        },
+        {
+          color: PAL.green,
+          vec: '[0.1, 0.4, -0.2, ...]',
+          label: 'positional embedding:',
+          annot: [
+            '← learned vector that encodes',
+            '"this patch is at position (4, 5)"',
+            '(one such vector per patch position)'
+          ],
+          tip: '<b>Positional embedding</b><br>A learned vector for grid position (4, 5). One per patch position.'
+        },
+        {
+          color: PAL.pink,
+          vec: '[0.4, 0.3, 0.6, ...]',
+          label: 'result:',
+          annot: ['← fed to the decoder / language model'],
+          tip: '<b>Result</b><br>Element-wise sum: patch content + its position. This is what the decoder receives.'
+        }
+      ];
+
+      function render() {
+        svg.selectAll('*').remove();
+
+        // Vertically center the three bars + two operators block. (The figure title is
+        // provided by the HtmlEmbed figcaption, so we do not draw one inside the SVG.)
+        const titleBottom = 20;
+        const gap = 56; // vertical space between bar centers' bars (operator zone)
+        const blockH = rows.length * BAR_H + (rows.length - 1) * gap;
+        const startY = titleBottom + ((VBH - titleBottom) - blockH) / 2;
+
+        const barTops = rows.map((_, i) => startY + i * (BAR_H + gap));
+        const operators = ['+', '='];
+        const rects = [];
+
+        rows.forEach((row, i) => {
+          const top = barTops[i];
+          const cy = top + BAR_H / 2;
+          const g = svg.append('g').attr('class', 'bar').style('cursor', 'pointer');
+
+          // Bar
+          const rect = g.append('rect')
+            .attr('x', BAR_X).attr('y', top).attr('width', BAR_W).attr('height', BAR_H)
+            .attr('rx', BAR_RX).attr('ry', BAR_RX)
+            .attr('fill', tint(row.color, 0.3)).attr('stroke', row.color).attr('stroke-width', 2)
+            .style('transition', 'stroke-width .12s ease');
+          rects.push(rect);
+
+          // Vector literal inside bar
+          g.append('text').attr('class', 'bar-text')
+            .attr('x', BAR_CX).attr('y', cy)
+            .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+            .attr('font-size', 18)
+            .text(row.vec);
+
+          // Left label (right-anchored, ends near LABEL_RIGHT)
+          g.append('text').attr('class', 'row-label')
+            .attr('x', LABEL_RIGHT).attr('y', cy)
+            .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
+            .attr('font-size', 16)
+            .text(row.label);
+
+          // Right annotation (left-anchored, may be multi-line, vertically centered)
+          const lines = row.annot;
+          const lh = 18;
+          const annotTop = cy - ((lines.length - 1) * lh) / 2;
+          const at = g.append('text').attr('class', 'row-annot')
+            .attr('x', ANNOT_X)
+            .attr('text-anchor', 'start')
+            .attr('font-size', 14.5);
+          lines.forEach((line, li) => {
+            at.append('tspan').attr('x', ANNOT_X).attr('y', annotTop + li * lh).text(line);
+          });
+
+          // Interactivity: thicken stroke + tooltip. Hovering the result (last row)
+          // also thickens the two input bars to show result = patch + position.
+          g.on('mouseenter', () => {
+              rect.attr('stroke-width', 4);
+              if (i === rows.length - 1) { rects[0].attr('stroke-width', 4); rects[1].attr('stroke-width', 4); }
+            })
+            .on('mousemove', (e) => showTip(e, row.tip))
+            .on('mouseleave', () => { rects.forEach(r => r.attr('stroke-width', 2)); hideTip(); });
+        });
+
+        // Operators centered on bar x-center, midway between consecutive bars.
+        operators.forEach((op, i) => {
+          const opY = (barTops[i] + BAR_H + barTops[i + 1]) / 2;
+          svg.append('text').attr('class', 'op')
+            .attr('x', BAR_CX).attr('y', opY)
+            .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+            .attr('font-size', 30)
+            .text(op);
+        });
+      }
+      render();
+
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover a bar to see what it carries.'; container.appendChild(h); }
+
+      if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
+      else { window.addEventListener('resize', render); }
+    };
+
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', () => ensureD3(bootstrap), { once: true }); }
+    else { ensureD3(bootstrap); }
+  })();
+</script>

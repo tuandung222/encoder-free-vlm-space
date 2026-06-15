@@ -1,0 +1,172 @@
+<div class="d3-architecture-comparison"></div>
+<style>
+  .d3-architecture-comparison { position: relative; }
+  .d3-architecture-comparison svg { width: 100%; height: auto; display: block; }
+  .d3-architecture-comparison .panel-title { fill: var(--text-color); font-weight: 700; }
+  .d3-architecture-comparison .box-title { fill: var(--text-color); font-weight: 700; }
+  .d3-architecture-comparison .box-sub { fill: var(--muted-color); }
+  .d3-architecture-comparison .note { fill: var(--muted-color); font-style: italic; }
+  .d3-architecture-comparison .frame { fill: none; stroke: var(--border-color); }
+  .d3-architecture-comparison .node { cursor: pointer; }
+  .d3-architecture-comparison .node rect { transition: stroke-width .12s ease, filter .12s ease; }
+  .d3-architecture-comparison .legend { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 12px; }
+  .d3-architecture-comparison .legend-title { font-size: 12px; font-weight: 700; color: var(--text-color); }
+  .d3-architecture-comparison .legend .items { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+  .d3-architecture-comparison .legend .item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; color: var(--text-color); }
+  .d3-architecture-comparison .legend .swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--border-color); }
+  .d3-architecture-comparison .hint { margin-top: 6px; font-size: 11.5px; color: var(--muted-color); }
+</style>
+<script>
+  (() => {
+    const ensureD3 = (cb) => {
+      if (window.d3 && typeof window.d3.select === 'function') return cb();
+      let s = document.getElementById('d3-cdn-script');
+      if (!s) { s = document.createElement('script'); s.id = 'd3-cdn-script'; s.src = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js'; document.head.appendChild(s); }
+      const onReady = () => { if (window.d3 && typeof window.d3.select === 'function') cb(); };
+      s.addEventListener('load', onReady, { once: true });
+      if (window.d3) onReady();
+    };
+
+    const bootstrap = () => {
+      const scriptEl = document.currentScript;
+      let container = scriptEl ? scriptEl.previousElementSibling : null;
+      if (!(container && container.classList && container.classList.contains('d3-architecture-comparison'))) {
+        const cs = Array.from(document.querySelectorAll('.d3-architecture-comparison')).filter(el => !(el.dataset && el.dataset.mounted === 'true'));
+        container = cs[cs.length - 1] || null;
+      }
+      if (!container) return;
+      if (container.dataset) { if (container.dataset.mounted === 'true') return; container.dataset.mounted = 'true'; }
+      container.style.position = container.style.position || 'relative';
+
+      // Named semantic palette — the article's figure descriptions specify colours by name
+      // (purple Image/Text, blue Encoder/Embedder, green Connector, pink Decoder). We keep
+      // them theme-aware by tinting toward --surface-bg and using --text-color for labels.
+      const PAL = { blue: '#5B9BD5', green: '#5FB97F', pink: '#E27BA4', red: '#E06C6C', purple: '#9B82DE', yellow: '#E3B25A', teal: '#46AFB0', gray: '#98A2AD' };
+      const tint = (hex, amt) => `color-mix(in oklab, ${hex} ${Math.round((amt == null ? 0.3 : amt) * 100)}%, var(--surface-bg))`;
+
+      // ---- single shared HTML tooltip (interactivity) ----
+      let tip = container.querySelector('.d3-tooltip'), tipInner;
+      if (!tip) {
+        tip = document.createElement('div'); tip.className = 'd3-tooltip';
+        Object.assign(tip.style, { position: 'absolute', top: '0', left: '0', transform: 'translate(-9999px,-9999px)', pointerEvents: 'none', maxWidth: '260px', padding: '8px 10px', borderRadius: '8px', fontSize: '12px', lineHeight: '1.4', border: '1px solid var(--border-color)', background: 'var(--surface-bg)', color: 'var(--text-color)', boxShadow: '0 4px 24px rgba(0,0,0,.18)', opacity: '0', transition: 'opacity .12s ease', zIndex: '5' });
+        tipInner = document.createElement('div'); tip.appendChild(tipInner); container.appendChild(tip);
+      } else { tipInner = tip.firstChild || tip; }
+      const showTip = (event, html) => { tipInner.innerHTML = html; const [px, py] = d3.pointer(event, container); tip.style.transform = `translate(${px + 14}px, ${py + 14}px)`; tip.style.opacity = '1'; };
+      const hideTip = () => { tip.style.opacity = '0'; };
+
+      const VBW = 1000, VBH = 560;
+      const svg = d3.select(container).append('svg')
+        .attr('viewBox', `0 0 ${VBW} ${VBH}`)
+        .attr('preserveAspectRatio', 'xMidYMid meet')
+        .style('width', '100%').style('height', 'auto').style('display', 'block');
+
+      const defs = svg.append('defs');
+      defs.append('marker').attr('id', 'arch-arrow').attr('viewBox', '0 0 10 10').attr('refX', 8).attr('refY', 5)
+        .attr('markerWidth', 7).attr('markerHeight', 7).attr('orient', 'auto-start-reverse')
+        .append('path').attr('d', 'M0,0 L10,5 L0,10 z').attr('fill', 'var(--muted-color)');
+
+      // a hoverable rounded box with title + optional wrapped subtitle + tooltip
+      function box(g, x, y, w, h, color, title, sub, tipHtml, titleSize) {
+        const grp = g.append('g').attr('class', 'node');
+        const rect = grp.append('rect').attr('x', x).attr('y', y).attr('width', w).attr('height', h)
+          .attr('rx', 14).attr('ry', 14)
+          .attr('fill', tint(color, 0.3)).attr('stroke', color).attr('stroke-width', 2);
+        const cx = x + w / 2;
+        const hasSub = sub && sub.length;
+        grp.append('text').attr('class', 'box-title').attr('x', cx)
+          .attr('y', hasSub ? y + h / 2 - 6 : y + h / 2)
+          .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+          .attr('font-size', titleSize || 20).text(title);
+        if (hasSub) {
+          const t = grp.append('text').attr('class', 'box-sub').attr('x', cx)
+            .attr('y', y + h / 2 + 14).attr('text-anchor', 'middle').attr('font-size', 11.5);
+          sub.forEach((line, i) => t.append('tspan').attr('x', cx).attr('dy', i === 0 ? 0 : 14).text(line));
+        }
+        if (tipHtml) {
+          grp.on('mouseenter', () => rect.attr('stroke-width', 4))
+            .on('mousemove', (e) => showTip(e, tipHtml))
+            .on('mouseleave', () => { rect.attr('stroke-width', 2); hideTip(); });
+        }
+        return grp;
+      }
+      const arrow = (g, x1, y1, x2, y2) => g.append('path').attr('d', `M${x1},${y1} L${x2},${y2}`)
+        .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2).attr('marker-end', 'url(#arch-arrow)');
+      const elbow = (g, pts) => g.append('path').attr('d', 'M' + pts.map(p => p.join(',')).join(' L'))
+        .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2).attr('marker-end', 'url(#arch-arrow)');
+
+      // One panel. enc = {label, sub, big, tip}
+      function panel(yTop, panelTitle, enc) {
+        const g = svg.append('g');
+        g.append('text').attr('class', 'panel-title').attr('x', 16).attr('y', yTop + 4).attr('font-size', 19).text(panelTitle);
+
+        const fx = 8, fy = yTop + 20, fw = VBW - 16, fh = 210;
+        g.append('rect').attr('class', 'frame').attr('x', fx).attr('y', fy).attr('width', fw).attr('height', fh).attr('rx', 14).attr('stroke-width', 1.5);
+
+        const mainY = fy + 80;   // centre line of the main pipeline row
+        const textY = fy + 165;  // centre line of the Text Tokens row
+
+        // inputs (purple)
+        box(g, 36, mainY - 29, 130, 58, PAL.purple, 'Image', null, '<b>Image</b><br>The raw input image, standardised to 512×512×3.', 18);
+        box(g, 36, textY - 26, 130, 52, PAL.purple, 'Text Tokens', null, '<b>Text Tokens</b><br>The user’s prompt, tokenised — fed straight into the decoder.', 17);
+
+        // encoder / embedder (blue). Big in the classical panel, tiny in the encoder-free panel.
+        const encX = 320;
+        const encW = enc.big ? 300 : 96;
+        const encH = enc.big ? 120 : 40;
+        box(g, encX, mainY - encH / 2, encW, encH, PAL.blue, enc.label, enc.big ? enc.sub : null, enc.tip, enc.big ? 20 : 12.5);
+        const encRight = encX + encW;
+        if (!enc.big) {
+          // annotate how much smaller it is
+          g.append('text').attr('class', 'note').attr('x', encX + encW / 2).attr('y', mainY + encH / 2 + 18)
+            .attr('text-anchor', 'middle').attr('font-size', 12).text('~35M params · ~15× smaller');
+        }
+
+        // connector (green) + decoder (pink)
+        const coX = 720, coW = 120, coH = 64;
+        box(g, coX, mainY - coH / 2, coW, coH, PAL.green, 'Connector', null, '<b>Connector</b><br>A single linear layer projecting embeddings to the decoder’s hidden size.', 18);
+        const deX = 880, deW = 104, deH = 92;
+        box(g, deX, mainY - deH / 2, deW, deH, PAL.pink, 'Decoder', ['(LM)'], '<b>Decoder (LM)</b><br>The language model. Reads image + text embeddings and generates text.', 20);
+
+        // arrows along the main row (all horizontal)
+        arrow(g, 166, mainY, encX - 4, mainY);
+        arrow(g, encRight, mainY, coX - 4, mainY);
+        arrow(g, coX + coW, mainY, deX - 4, mainY);
+
+        // Text Tokens bypasses encoder + connector, entering the decoder from below
+        const deCx = deX + deW / 2;
+        elbow(g, [[166, textY], [deCx, textY], [deCx, mainY + deH / 2 + 4]]);
+      }
+
+      function render() {
+        svg.selectAll('g').remove();
+        panel(24, 'Classical VLM', {
+          label: 'Vision Encoder', big: true,
+          sub: ['ViT, e.g. 550M params in Gemma 4', 'pretrained; many transformer layers'],
+          tip: '<b>Vision Encoder</b><br>A pretrained Vision Transformer — ~550M params, many attention layers. Turns pixels into visual tokens.'
+        });
+        panel(304, 'Encoder-Free VLM (this notebook)', {
+          label: 'Embedder', big: false,
+          tip: '<b>Embedder</b><br>No pretraining, no transformer layers — ~35M params (~15× smaller). Just patchify → linear projection → positional embeddings.'
+        });
+      }
+      render();
+
+      // Legend
+      let legend = container.querySelector('.legend');
+      if (!legend) { legend = document.createElement('div'); legend.className = 'legend'; legend.innerHTML = '<div class="legend-title">Legend</div><div class="items"></div>'; container.appendChild(legend); }
+      const items = legend.querySelector('.items'); items.innerHTML = '';
+      [['Inputs', PAL.purple], ['Vision Encoder / Embedder', PAL.blue], ['Connector', PAL.green], ['Decoder (LM)', PAL.pink]].forEach(([name, color]) => {
+        const el = document.createElement('span'); el.className = 'item';
+        const sw = document.createElement('span'); sw.className = 'swatch'; sw.style.background = tint(color, 0.3); sw.style.borderColor = color;
+        const tx = document.createElement('span'); tx.textContent = name; el.appendChild(sw); el.appendChild(tx); items.appendChild(el);
+      });
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover any block for details.'; container.appendChild(h); }
+
+      if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
+      else { window.addEventListener('resize', render); }
+    };
+
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', () => ensureD3(bootstrap), { once: true }); }
+    else { ensureD3(bootstrap); }
+  })();
+</script>
