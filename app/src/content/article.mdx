@@ -1,6 +1,6 @@
 ---
 title: "Train Your Own Encoder-Free VLM in $100"
-description: "Why Gemma 4's encoder-free architecture is very cool — and how to train your own encoder-free VLM."
+description: "Why Gemma 4's encoder-free architecture is very cool and how to train your own encoder-free VLM."
 authors:
   - name: "Nazar Drugov"
     url: "https://huggingface.co/ndrugov"
@@ -14,6 +14,7 @@ affiliations:
     url: "https://huggingface.co"
 published: "Jun. 15, 2026"
 template: "article"
+citationKey: "train_your_own_encoder_free_vlm"
 tags:
   - research
   - vlm
@@ -35,7 +36,7 @@ import responseTree from "./assets/image/response_to_tree.jpeg";
 import responseDome from "./assets/image/response_to_dome.jpeg";
 import responseCat2 from "./assets/image/response_to_cat_2.jpeg";
 
-On June 3, Google DeepMind released Gemma 4 12B Unified — a multimodal model with a very special encoder-free architecture. In this blog, we'll find out why it's cool, and then we'll train our own encoder-free model for under $100!
+Google DeepMind latest Gemma 4 is an encoder-free multimodal model. In this blog, we'll find out why it's cool, and then we'll train our own for under $100!
 
 ## Classical Multimodal Models
 
@@ -47,19 +48,17 @@ The vision encoder is usually a Vision Transformer. It takes the raw image, spli
 
 ## Are Encoders Really Necessary?
 
-Have you ever wondered whether the vision and audio encoders are absolutely necessary? I hadn't. But someone at DeepMind did, and they found the answer is no.
-
-Here is one intuitive way to think about this: the encoder's job is to turn pixels into vectors the language model can make sense of. If the language model is powerful enough — and has seen enough image-text data during training — maybe it doesn't need those vectors pre-chewed. Maybe it can extract the visual meaning itself. So the vision encoder gets replaced from a 550M-parameter transformer with a thing called embedder. Here is the visualization of embedder in Gemma 4 12B compared to a vision encoder.
+Have you ever wondered whether the encoders are absolutely necessary? Someone at DeepMind did, and they found the answer is no.
+Here is one intuitive way to think about this: the encoder's job is to turn pixels into vectors that the language model can make sense of. If the language model is powerful enough — and has seen enough image-text data during training — maybe it doesn't need those vectors pre-chewed. Maybe it can extract the visual meaning itself. So the vision encoder gets replaced from a 550M-parameter transformer with a thing called embedder. Here is the visualization of embedder in Gemma 4 12B compared to a vision encoder.
 
 <HtmlEmbed src="d3-architecture-comparison.html" title="Classical VLM vs. Encoder-Free VLM" desc="The only difference: a heavy 550M-parameter pretrained encoder becomes a tiny ~35M-parameter embedder — about 15× smaller." />
 
-The audio encoder gets cut even more — raw amplitude samples go straight through one linear projection.
-
+The audio encoder gets cut even more - raw amplitude samples go straight through one linear projection.
 But, if models with encoders work well, why would we want to throw the encoders away? Does being encoder-free offer any advantages?
 
 It does. Two things in particular:
 
-1. Easier to fine-tune. With encoders, you usually freeze them and train only the language model, which means the encoders never improve and you have to keep the separate parts working together — more moving parts, more to go wrong. There's only one model now, so when you train it, everything updates at once.
+1. Easier to fine-tune. With encoders, you usually freeze them and train only the language model, which means the encoders never improve, and you have to keep the separate parts working together.. There's only one model now, so when you train it, everything updates at once.
 2. Lower latency. The language model must wait until the image is processed by the encoder or the embedder. Since the embedder is much smaller, language model's wait time is much lower, which leads to overall lower latency of a forward pass.
 
 Now that we've learned that encoder-free models are cool, let's build one. Specifically, we'll build a model that takes an image and text as input. We skip audio and video — handling them would make the post much longer, and the image case illustrates the key ideas on its own 🙂.
@@ -129,8 +128,7 @@ def extract_flattened_patches(x: torch.Tensor, patch_size: int) -> torch.Tensor:
 
 ### Project to the model's dimension
 
-Each flattened patch is a 3072-long vector of raw pixel values, but the language model takes as input only vectors of size that 
-we will denote as hidden_size. So, the embedder in Gemma 4 12B normalizes each flattened patch with a LayerNorm, multiplies it by a single learned matrix that maps 3072 → hidden_size, and normalizes again. 
+We unrolled the 16×16 patch grid into a flat sequence of 256 flattened patches, each of which is a 3072-long vector. We want to feed this sequence of 256 flattened patches into the language model together with text tokens. But the language model takes as input only vectors of size that we will denote hidden_size. So, the embedder in Gemma 4 12B normalizes each flattened patch with a LayerNorm, multiplies it by a single learned matrix that maps 3072 → hidden_size, and normalizes again.
 
 ```python
 self.ln1 = nn.LayerNorm(3072)           # normalize each flattened patch
@@ -144,9 +142,9 @@ After these steps, every patch embedding only contains information about patch's
 
 <HtmlEmbed src="d3-positional-add.html" title="Adding Positional Information" desc="Positional information is simply added, element-wise, to each patch embedding." />
 
-The simplest approach: learn one embedding vector per patch position. For each position (𝑖,𝑗) in the 16×16 grid, you may store a learned vector of length D. This requires a table of shape `(16, 16, D)` — 256×D parameters, one independent vector per cell.
+The simplest approach: learn one embedding vector per patch position. For each position (𝑖,𝑗) in the 16×16 grid, you may store a learned vector of length D. This requires a table of shape (16, 16, D) — 256×D parameters, one independent vector per cell.
 
-A more parameter-efficient approach: factor the grid into separate row and column tables of shape `(16, D)` each, and define the positional embedding for patch (𝑖,𝑗) as the sum of the row and column entries:
+A more parameter-efficient approach: factor the grid into separate row and column tables of shape (16, D) each, and define the positional embedding for patch (𝑖,𝑗) as the sum of the row and column entries:
 
 ```
 pos(i, j) = E_row[i] + E_col[j]
@@ -158,7 +156,7 @@ With M=16, the factorized tables use 2·16·hidden_size = 32·hidden_size parame
 
 <HtmlEmbed src="d3-positional-tables.html" title="Full Table vs. Factorized Approach" desc="The factorized row + column tables use 32·hidden_size parameters instead of 256·hidden_size — an 8× saving." />
 
-We choose the parameter-efficient approach to match the architecture of Gemma 4 12B. To build all 256 positional embeddings at once, we broadcast the row table against the column table and add them, then add the result to the patch embeddings and apply one final LayerNorm:
+We use the parameter-efficient approach so our architecture matches Gemma 4 12B. Instead of learning a separate embedding for each of the 256 grid positions, we learn just one embedding per row and one per column. Each patch's positional embedding is then simply the sum of its row embedding and its column embedding. We build all 256 positional embeddings in one step using broadcasting.
 
 ```python
 row_emb = self.y_pos_emb[:, :nh, :]    # (1, nh, D)
@@ -224,7 +222,15 @@ def tokenize_sample(sample, tokenizer, vlm_cfg):
 
 ## Packing Samples Into Batches
 
-One practical thing before training: how do we batch these samples? They vary wildly in length — a one-line caption next to a long multi-turn conversation. If we padded every sample up to the maximum length, most of each batch would be padding, and the GPU would spend almost all its time on tokens that mean nothing. So instead we pack: concatenate several samples back-to-back into one fixed-length sequence (here 2048 tokens) until the next sample won't fit, then pad just once at the very end. A single packed sequence can hold several samples — and therefore several images, each carrying its own block of 256 image tokens. This is a big part of what keeps the whole run cheap enough to fit our $100 budget.
+One practical thing before training: how do we batch these samples? They vary wildly in length. One sample can contain a one-line caption, while another contains a long multi-turn conversation. Suppose we decide that each sequence fed into the language model contains only one sample. Because sequences are fed into the transformer as a batch, each sequence must have the same length. To feed samples of different lengths into the transformer, we would have to choose a sequence length large enough for both long and short samples to fit. If a sample is shorter than the maximum sequence length, we have to pad it with special padding tokens. That would mean our GPU is using a lot of resources to process fake tokens we don't care about. So instead we pack samples into fixed-length sequences of 2048 tokens, which we call knapsacks. Specifically, we follow this algorithm:
+
+1. Collect pool_size samples into a pool.
+2. Sort by token length descending so long samples claim knapsack space first.
+3. For each sample, place it in the first existing knapsack with enough remaining space. If none fit, open a new knapsack.
+4. Right-pad each knapsack to max_knapsack_length.
+5. Accumulate completed knapsacks; yield a batch when max_batch_size are ready.
+
+A single knapsack can hold several samples, which is a big part of what keeps the whole run cheap enough to fit our $100 budget.
 
 <HtmlEmbed src="d3-knapsack-packing.html" title="Knapsack Packing" desc="Sort samples longest-first, greedily drop each into the first knapsack it fits, and pad only once at the end." />
 
@@ -253,8 +259,8 @@ loss = F.cross_entropy(
 ```
 
 ### Data and Decoder
-We will train the model on FineVision dataset, which is "meticulously collected, curated, and unified corpus of 24 million samples" for training VLMs.
-As our decoder, we will use SmolLM2-135M-Instruct.
+We will train the model on the FineVision dataset, which is "meticulously collected, curated, and unified corpus of 24 million samples" for training VLMs.
+We wanted to see how small the decoder could be while still performing reasonably well in an encoder-free VLM. So, as our decoder, we picked the tiny SmolLM2-135M-Instruct. For example, the smallest multimodal model out there, SmolVLM-256M, uses SmolLM2-135M-Instruct as its language model and a 93M SigLIP vision encoder.
 
 After training, we decided to read the responses our model generates, and found that most are of this quality:
 
@@ -264,16 +270,17 @@ After training, we decided to read the responses our model generates, and found 
 
 ### A bigger decoder
 
-In the beginning, we mentioned that the encoder-free approach makes sense if the decoder is powerful enough. Maybe the SmolLM with 135M params isn't big enough? Let's try to replace it with SmolLM2-360M-Instruct.
-After 8 hours of training, I generated the model's responses to several images.
+In the beginning, we mentioned that the encoder-free approach makes sense if the decoder is powerful enough. It looks like the SmolLM2 with 135M params is too small, so let's replace it with SmolLM2-360M-Instruct.
+
+After 8 hours of training, we generated the model's responses to several images.
 
 <Image src={responseCat} alt="SmolLM2-360M's response to a photo of a cat" caption="A bigger decoder (SmolLM2-360M) — still describing things that aren't in the picture." />
 
 ### Trying an even bigger decoder and different data
 
-After two unsuccessful attempts, I decided to explore FineVision and discovered that it contains many "advanced" samples, like questions about chemical diagrams or images of LaTeX text. I thought this might be too much for a model that is only learning "to see," so I tried to find subsets of FineVision with simpler samples.
+After two unsuccessful attempts, we decided to explore FineVision and discovered that it contains many "advanced" samples, like questions about chemical diagrams or images of LaTeX text. We thought this might be too much for a model that is only learning "to see," so we tried to find subsets of FineVision with simpler samples.
 
-I also scaled the decoder up to Qwen 3 1.7B and trained it on these different subsets of FineVision. You can see the validation loss curves below.
+We also scaled the decoder up to Qwen 3 1.7B and trained it on these different subsets of FineVision. You can see the validation loss curves below.
 
 <Image src={lossCurvesQwen3} alt="Validation loss curves for Qwen 3 1.7B across five FineVision subsets" caption="Validation loss for Qwen 3 1.7B across five FineVision subsets. Only <strong>densefusion + sharegpt4v</strong> (pink) keeps decreasing — the smaller subsets overfit and curve back up." />
 
@@ -298,5 +305,5 @@ Here, we take this model and ask it to describe a handful of images it hasn't se
 
 
 ## Thank you!
-Thank you for exploring encoder-free VLMs with us! 
-Feedback is greatly appreciated — feel free to reach out at nazar.drugov@huggingface.co.
+Thank you for exploring encoder-free VLMs with us!
+Feedback is greatly appreciated - please share it in the community section of the blog!
