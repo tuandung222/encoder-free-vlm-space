@@ -1,6 +1,6 @@
 ---
 title: 'Encoder-Free VLM'
-short_description: 'Train your own encoder-free VLM for under $100'
+short_description: 'Train Your Own Encoder-Free VLM in $100'
 emoji: 👁️
 colorFrom: blue
 colorTo: indigo
