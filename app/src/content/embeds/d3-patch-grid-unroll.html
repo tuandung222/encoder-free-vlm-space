@@ -4,8 +4,8 @@
   .d3-patch-grid-unroll svg { width: 100%; height: auto; display: block; }
   .d3-patch-grid-unroll .caption { fill: var(--text-color); font-weight: 700; }
   .d3-patch-grid-unroll .muted { fill: var(--muted-color); }
-  .d3-patch-grid-unroll .cell { cursor: pointer; transition: stroke-width .1s ease, opacity .1s ease; }
-  .d3-patch-grid-unroll .vec { cursor: pointer; transition: stroke-width .1s ease; }
+  .d3-patch-grid-unroll .frame { cursor: pointer; }
+  .d3-patch-grid-unroll .tile { cursor: pointer; }
   .d3-patch-grid-unroll .hint { margin-top: 6px; font-size: 11.5px; color: var(--muted-color); }
 </style>
 <script>
@@ -30,13 +30,9 @@
       if (container.dataset) { if (container.dataset.mounted === 'true') return; container.dataset.mounted = 'true'; }
       container.style.position = container.style.position || 'relative';
 
-      // Named semantic palette — the article's figure descriptions specify colours by name
-      // (purple Image/Text, blue Encoder/Embedder, green Connector, pink Decoder). We keep
-      // them theme-aware by tinting toward --surface-bg and using --text-color for labels.
-      const PAL = { blue: '#5B9BD5', green: '#5FB97F', pink: '#E27BA4', red: '#E06C6C', purple: '#9B82DE', yellow: '#E3B25A', teal: '#46AFB0', gray: '#98A2AD' };
-      const tint = (hex, amt) => `color-mix(in oklab, ${hex} ${Math.round((amt == null ? 0.3 : amt) * 100)}%, var(--surface-bg))`;
+      const PAL = { blue: '#5B9BD5' };
 
-      // ---- single shared HTML tooltip (interactivity) ----
+      // ---- single shared HTML tooltip ----
       let tip = container.querySelector('.d3-tooltip'), tipInner;
       if (!tip) {
         tip = document.createElement('div'); tip.className = 'd3-tooltip';
@@ -46,7 +42,68 @@
       const showTip = (event, html) => { tipInner.innerHTML = html; const [px, py] = d3.pointer(event, container); tip.style.transform = `translate(${px + 14}px, ${py + 14}px)`; tip.style.opacity = '1'; };
       const hideTip = () => { tip.style.opacity = '0'; };
 
-      const VBW = 1000, VBH = 460;
+      // ---- The "input image": a real raster drawn once at full resolution with canvas
+      // vector primitives (a little landscape), then sliced into 32x32-px patches. Drawing
+      // the scene with shapes — rather than an emoji glyph or external file — keeps the embed
+      // fully self-contained and renders identically in every browser AND in PDF export
+      // (color-emoji fonts don't paint reliably to canvas, and not at all in print). ----
+      const SRC = 512, GRID = 16, PX = SRC / GRID; // 512 / 16 = 32 px per patch
+      let srcCanvas = null, fullURL = null;
+      const cropCache = {};
+
+      const buildImage = () => {
+        const cv = document.createElement('canvas'); cv.width = SRC; cv.height = SRC;
+        const ctx = cv.getContext('2d', { willReadFrequently: true });
+
+        // sky
+        const sky = ctx.createLinearGradient(0, 0, 0, SRC);
+        sky.addColorStop(0, '#6FB1FC'); sky.addColorStop(1, '#CFE9FF');
+        ctx.fillStyle = sky; ctx.fillRect(0, 0, SRC, SRC);
+
+        // sun (with a soft core)
+        ctx.fillStyle = '#FFD23F';
+        ctx.beginPath(); ctx.arc(SRC * 0.74, SRC * 0.26, SRC * 0.11, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.beginPath(); ctx.arc(SRC * 0.74, SRC * 0.26, SRC * 0.065, 0, Math.PI * 2); ctx.fill();
+
+        // clouds
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        const cloud = (cx, cy, s) => {
+          [[0, 0, 1], [0.55, 0.12, 0.78], [-0.55, 0.12, 0.7], [0.22, -0.22, 0.68]]
+            .forEach(([dx, dy, r]) => { ctx.beginPath(); ctx.arc(cx + dx * s, cy + dy * s, r * s * 0.5, 0, Math.PI * 2); ctx.fill(); });
+        };
+        cloud(SRC * 0.27, SRC * 0.21, SRC * 0.15);
+        cloud(SRC * 0.52, SRC * 0.12, SRC * 0.10);
+
+        // far hill
+        ctx.fillStyle = '#8FBF6B';
+        ctx.beginPath(); ctx.moveTo(0, SRC * 0.66);
+        ctx.quadraticCurveTo(SRC * 0.30, SRC * 0.50, SRC * 0.55, SRC * 0.62);
+        ctx.quadraticCurveTo(SRC * 0.80, SRC * 0.74, SRC, SRC * 0.56);
+        ctx.lineTo(SRC, SRC); ctx.lineTo(0, SRC); ctx.closePath(); ctx.fill();
+
+        // near hill
+        ctx.fillStyle = '#5E9C57';
+        ctx.beginPath(); ctx.moveTo(0, SRC * 0.81);
+        ctx.quadraticCurveTo(SRC * 0.35, SRC * 0.66, SRC * 0.62, SRC * 0.80);
+        ctx.quadraticCurveTo(SRC * 0.83, SRC * 0.90, SRC, SRC * 0.82);
+        ctx.lineTo(SRC, SRC); ctx.lineTo(0, SRC); ctx.closePath(); ctx.fill();
+
+        srcCanvas = cv;
+        try { fullURL = cv.toDataURL(); } catch (_) { fullURL = null; }
+      };
+      const cropURL = (idx) => {
+        if (cropCache[idx]) return cropCache[idx];
+        const row = Math.floor(idx / GRID), col = idx % GRID;
+        const OUT = 64, out = document.createElement('canvas'); out.width = OUT; out.height = OUT;
+        const c = out.getContext('2d'); c.imageSmoothingEnabled = true;
+        c.drawImage(srcCanvas, col * PX, row * PX, PX, PX, 0, 0, OUT, OUT);
+        let url = ''; try { url = out.toDataURL(); } catch (_) { url = ''; }
+        return (cropCache[idx] = url);
+      };
+      buildImage();
+
+      const VBW = 1180, VBH = 492;
       const svg = d3.select(container).append('svg')
         .attr('viewBox', `0 0 ${VBW} ${VBH}`)
         .attr('preserveAspectRatio', 'xMidYMid meet')
@@ -58,86 +115,73 @@
         .attr('markerWidth', 7).attr('markerHeight', 7).attr('orient', 'auto-start-reverse')
         .append('path').attr('d', 'M0,0 L10,5 L0,10 z').attr('fill', 'var(--muted-color)');
 
-      // The "image" being patchified is the real Hugging Face logo. We sample it once
-      // into a 16×16 grid so each of the 256 patches takes the logo's colour there.
-      const LOGO = '/hf-logo.svg';
-      const EMPTY = 'color-mix(in oklab, var(--muted-color) 6%, var(--surface-bg))';
-      let logoColors = null;
-      const faceFill = (row, col) => (logoColors && logoColors[row * 16 + col]) || EMPTY;
-      const sampleLogo = (cb) => {
-        try {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            try {
-              const n = 16, cv = document.createElement('canvas');
-              cv.width = n; cv.height = n;
-              const ctx = cv.getContext('2d', { willReadFrequently: true });
-              const iw = img.naturalWidth || 95, ih = img.naturalHeight || 88;
-              const s = Math.min(n / iw, n / ih), dw = iw * s, dh = ih * s;
-              ctx.clearRect(0, 0, n, n);
-              ctx.imageSmoothingEnabled = true;
-              ctx.drawImage(img, (n - dw) / 2, (n - dh) / 2, dw, dh);
-              const d = ctx.getImageData(0, 0, n, n).data;
-              logoColors = [];
-              for (let i = 0; i < n * n; i++) {
-                logoColors.push(d[i * 4 + 3] < 60 ? null : `rgb(${d[i * 4]}, ${d[i * 4 + 1]}, ${d[i * 4 + 2]})`);
-              }
-            } catch (_) { logoColors = null; }
-            cb();
-          };
-          img.onerror = () => cb();
-          img.src = LOGO;
-        } catch (_) { cb(); }
-      };
-
       function render() {
         svg.selectAll('g').remove();
 
-        // index -> { type: 'cell'|'vec', rect } maps so the two views can cross-highlight
-        const cellByIdx = {};   // every index 0..255
-        const vecByIdx = {};    // only the drawn flat-sequence vectors
+        const frameByIdx = {};  // patch frame rects on the image (all 256)
+        const tileByIdx = {};   // sequence tiles that are actually drawn
 
-        // ---- highlight helpers ----
-        const highlightCell = (idx) => { const r = cellByIdx[idx]; if (r) r.attr('stroke', PAL.blue).attr('stroke-width', 2).attr('opacity', 1); };
-        const resetCell = (idx) => { const r = cellByIdx[idx]; if (r) r.attr('stroke', 'var(--border-color)').attr('stroke-width', 0.5).attr('opacity', 1); };
-        const highlightVec = (idx) => { const r = vecByIdx[idx]; if (r) r.attr('stroke-width', 3); };
-        const resetVec = (idx) => { const r = vecByIdx[idx]; if (r) r.attr('stroke-width', 1); };
+        const FRAME_STROKE = 'rgba(0,0,0,0.5)';
+        const highlightPatch = (idx) => {
+          const f = frameByIdx[idx]; if (f) f.attr('stroke', PAL.blue).attr('stroke-width', 3).attr('fill', 'rgba(91,155,213,0.28)');
+          const t = tileByIdx[idx]; if (t) t.attr('stroke', PAL.blue).attr('stroke-width', 3);
+        };
+        const resetPatch = (idx) => {
+          const f = frameByIdx[idx]; if (f) f.attr('stroke', FRAME_STROKE).attr('stroke-width', 1.25).attr('fill', 'transparent');
+          const t = tileByIdx[idx]; if (t) t.attr('stroke', 'var(--border-color)').attr('stroke-width', 1.25);
+        };
 
-        // ---- LEFT: 16x16 patch grid ----
-        const N = 16, cell = 22, gridW = N * cell; // 352px
-        const gx = 40, gy = 56;
-        const grid = svg.append('g');
-        for (let row = 0; row < N; row++) {
-          for (let col = 0; col < N; col++) {
-            const idx = row * N + col;
-            const r = grid.append('rect')
-              .attr('class', 'cell')
-              .attr('x', gx + col * cell).attr('y', gy + row * cell)
+        // ---- LEFT: the 512x512 image with a 16x16 grid of framed patches ----
+        const imgX = 40, imgY = 52, S = 384, cell = S / GRID; // 24 px per displayed patch
+        const left = svg.append('g');
+
+        if (fullURL) {
+          left.append('image').attr('href', fullURL).attr('xlink:href', fullURL)
+            .attr('x', imgX).attr('y', imgY).attr('width', S).attr('height', S)
+            .attr('preserveAspectRatio', 'none');
+        } else {
+          left.append('rect').attr('x', imgX).attr('y', imgY).attr('width', S).attr('height', S)
+            .attr('fill', 'color-mix(in oklab, var(--muted-color) 8%, var(--surface-bg))');
+        }
+        // outer image border
+        left.append('rect').attr('x', imgX).attr('y', imgY).attr('width', S).attr('height', S)
+          .attr('fill', 'none').attr('stroke', 'var(--text-color)').attr('stroke-width', 1.5);
+
+        // one bold frame per patch (transparent fill keeps the whole cell hoverable)
+        for (let row = 0; row < GRID; row++) {
+          for (let col = 0; col < GRID; col++) {
+            const idx = row * GRID + col;
+            const f = left.append('rect').attr('class', 'frame')
+              .attr('x', imgX + col * cell).attr('y', imgY + row * cell)
               .attr('width', cell).attr('height', cell)
-              .attr('fill', faceFill(row, col))
-              .attr('stroke', 'var(--border-color)').attr('stroke-width', 0.5);
-            cellByIdx[idx] = r;
-            r.on('mouseenter', () => { highlightCell(idx); highlightVec(idx); })
-              .on('mousemove', (e) => showTip(e, `<b>Patch (row ${row}, col ${col})</b><br>Sequence index = r·16 + c = ${idx}`))
-              .on('mouseleave', () => { resetCell(idx); resetVec(idx); hideTip(); });
+              .attr('fill', 'transparent')
+              .attr('stroke', FRAME_STROKE).attr('stroke-width', 1.25)
+              .style('pointer-events', 'all');
+            frameByIdx[idx] = f;
+            f.on('mouseenter', () => highlightPatch(idx))
+              .on('mousemove', (e) => showTip(e, `<b>Patch (row ${row}, col ${col})</b><br>32 × 32 px region<br>Sequence index = ${row} · 16 + ${col} = <b>${idx}</b>`))
+              .on('mouseleave', () => { resetPatch(idx); hideTip(); });
           }
         }
-        // minimal corner position labels
-        const corner = (cx, cy, txt, anchor, dy) => grid.append('text')
+
+        const corner = (cx, cy, txt, anchor) => left.append('text')
           .attr('class', 'muted').attr('x', cx).attr('y', cy)
-          .attr('text-anchor', anchor).attr('font-size', 10).attr('dy', dy).text(txt);
-        corner(gx + 2, gy - 4, '(0,0)', 'start', 0);
-        corner(gx + gridW - 2, gy - 4, '(0,15)', 'end', 0);
-        corner(gx + 2, gy + gridW + 13, '(15,0)', 'start', 0);
+          .attr('text-anchor', anchor).attr('font-size', 10).text(txt);
+        corner(imgX + 2, imgY - 5, '(0,0)', 'start');
+        corner(imgX + S - 2, imgY - 5, '(0,15)', 'end');
+        corner(imgX + 2, imgY + S + 14, '(15,0)', 'start');
 
-        grid.append('text').attr('class', 'caption')
-          .attr('x', gx + gridW / 2).attr('y', gy + gridW + 38)
+        left.append('text').attr('class', 'caption')
+          .attr('x', imgX + S / 2).attr('y', imgY + S + 36)
           .attr('text-anchor', 'middle').attr('font-size', 15)
-          .text('16 × 16 = 256 patches');
+          .text('512 × 512 image — 16 × 16 = 256 patches');
+        left.append('text').attr('class', 'muted')
+          .attr('x', imgX + S / 2).attr('y', imgY + S + 56)
+          .attr('text-anchor', 'middle').attr('font-size', 12.5)
+          .text('each patch is a 32 × 32 px region of the image');
 
-        // ---- ARROW: grid -> sequence ----
-        const ax1 = gx + gridW + 24, ax2 = 632, ay = gy + gridW / 2;
+        // ---- ARROW: image -> sequence ----
+        const ax1 = imgX + S + 24, ax2 = 636, ay = imgY + S / 2;
         svg.append('text').attr('class', 'muted')
           .attr('x', (ax1 + ax2) / 2).attr('y', ay - 14)
           .attr('text-anchor', 'middle').attr('font-size', 13)
@@ -147,62 +191,59 @@
           .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2.5)
           .attr('marker-end', 'url(#unroll-arrow)');
 
-        // ---- RIGHT: flat sequence of patch vectors ----
+        // ---- RIGHT: flat sequence — each slot shows the actual patch image ----
         const seq = svg.append('g');
-        const barW = 22, barH = 90, gap = 10;
-        const seqY = ay - barH / 2;
-        let cx = ax2 + 24;
+        const tw = 44, gap = 12, tileY = ay - tw / 2;
+        let cx = 660;
 
-        const drawVec = (idx, showLabel) => {
-          const x = cx;
-          const r = seq.append('rect')
-            .attr('class', 'vec')
-            .attr('x', x).attr('y', seqY)
-            .attr('width', barW).attr('height', barH)
-            .attr('rx', 4).attr('ry', 4)
-            .attr('fill', faceFill(Math.floor(idx / N), idx % N))
-            .attr('stroke', 'var(--border-color)').attr('stroke-width', 1);
-          vecByIdx[idx] = r;
-          const row = Math.floor(idx / N), col = idx % N;
-          r.on('mouseenter', () => { highlightVec(idx); highlightCell(idx); })
+        const drawTile = (idx, showLabel) => {
+          const x = cx, row = Math.floor(idx / GRID), col = idx % GRID;
+          const url = cropURL(idx);
+          if (url) {
+            seq.append('image').attr('href', url).attr('xlink:href', url)
+              .attr('x', x).attr('y', tileY).attr('width', tw).attr('height', tw)
+              .attr('preserveAspectRatio', 'none').style('pointer-events', 'none');
+          }
+          const t = seq.append('rect').attr('class', 'tile')
+            .attr('x', x).attr('y', tileY).attr('width', tw).attr('height', tw)
+            .attr('rx', 3).attr('ry', 3)
+            .attr('fill', url ? 'transparent' : 'color-mix(in oklab, var(--muted-color) 10%, var(--surface-bg))')
+            .attr('stroke', 'var(--border-color)').attr('stroke-width', 1.25)
+            .style('pointer-events', 'all');
+          tileByIdx[idx] = t;
+          t.on('mouseenter', () => highlightPatch(idx))
             .on('mousemove', (e) => showTip(e, `<b>Sequence index ${idx}</b><br>Patch (row ${row}, col ${col})`))
-            .on('mouseleave', () => { resetVec(idx); resetCell(idx); hideTip(); });
+            .on('mouseleave', () => { resetPatch(idx); hideTip(); });
           if (showLabel) {
             seq.append('text').attr('class', 'muted')
-              .attr('x', x + barW / 2).attr('y', seqY + barH + 16)
+              .attr('x', x + tw / 2).attr('y', tileY + tw + 15)
               .attr('text-anchor', 'middle').attr('font-size', 11).text(String(idx));
           }
-          cx += barW + gap;
+          cx += tw + gap;
         };
-
         const ellipsis = () => {
           seq.append('text').attr('class', 'muted')
-            .attr('x', cx + 14).attr('y', seqY + barH / 2)
+            .attr('x', cx + 12).attr('y', tileY + tw / 2)
             .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
             .attr('font-size', 24).text('⋯');
-          cx += 38;
+          cx += 36;
         };
 
-        // leading patches (top-left of the image → background)
-        [0, 1, 2].forEach((idx) => drawVec(idx, true));
+        [0, 1, 2].forEach((i) => drawTile(i, true));
         ellipsis();
-        // a run from the middle of the image → these land on the logo (yellow)
-        [119, 120, 121].forEach((idx) => drawVec(idx, true));
+        [119, 120, 121].forEach((i) => drawTile(i, true));
         ellipsis();
-        // final patches (bottom-right → background)
-        [254, 255].forEach((idx) => drawVec(idx, true));
+        [254, 255].forEach((i) => drawTile(i, true));
 
-        const seqStart = ax2 + 24;
-        const seqEnd = cx - gap;
+        const seqStart = 660, seqEnd = cx - gap;
         seq.append('text').attr('class', 'muted')
-          .attr('x', (seqStart + seqEnd) / 2).attr('y', seqY + barH + 38)
+          .attr('x', (seqStart + seqEnd) / 2).attr('y', tileY + tw + 38)
           .attr('text-anchor', 'middle').attr('font-size', 14)
           .text('flat sequence of 256 patch vectors');
       }
       render();
-      sampleLogo(() => render());   // recolour patches once the logo has loaded
 
-      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover a patch to see its (row, col) and its position in the flat sequence.'; container.appendChild(h); }
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover a patch — in the image or in the sequence — to see its (row, col) and its position in the flat sequence.'; container.appendChild(h); }
 
       if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
       else { window.addEventListener('resize', render); }

@@ -29,6 +29,11 @@ import Image from "../components/Image.astro";
 import responseMonkey from "./assets/image/response_to_monkey.png";
 import responseCat from "./assets/image/response_to_cat.png";
 import lossCurvesQwen3 from "./assets/image/loss_curves_qwen3.png";
+import responseSki from "./assets/image/response_to_ski.jpeg";
+import responseSf from "./assets/image/response_to_sf.jpeg";
+import responseTree from "./assets/image/response_to_tree.jpeg";
+import responseDome from "./assets/image/response_to_dome.jpeg";
+import responseCat2 from "./assets/image/response_to_cat_2.jpeg";
 
 On June 3, Google DeepMind released Gemma 4 12B Unified — a multimodal model with a very special encoder-free architecture. In this blog, we'll find out why it's cool, and then we'll train our own encoder-free model for under $100!
 
@@ -40,7 +45,7 @@ A model that takes images, audio, and text as input and generates text as output
 
 The vision encoder is usually a Vision Transformer. It takes the raw image, splits it into patches, converts each patch into a vector, and runs many attention layers over them to produce a sequence of embeddings rich with visual meaning. It was pretrained on hundreds of millions of image–text pairs, so it already "knows" a lot about the visual world. Similarly, the audio encoder turns a raw waveform into a sequence of vectors called audio embeddings, again using a stack of attention layers. After a sequence of embeddings leaves an encoder, each embedding in that sequence gets multiplied with a matrix called connector to project it to the dimension the language model expects.
 
-## Are encoders really necessary?
+## Are Encoders Really Necessary?
 
 Have you ever wondered whether the vision and audio encoders are absolutely necessary? I hadn't. But someone at DeepMind did, and they found the answer is no.
 
@@ -90,7 +95,7 @@ Now we divide that 512×512 image into 32×32 patches. That creates a 16×16 gri
 
 The patches start life in a 2D arrangement, but the language model eats a 1D sequence. So we have to flatten the grid into a list. What's the right order to put the patch embeddings in? The order doesn't really matter because the transformer's attention is permutation-equivariant. What matters is that each patch embedding contains information about its original 2D position in the grid of patches.
 
-<HtmlEmbed src="d3-patch-grid-unroll.html" title="Unrolling the 16×16 patch grid into a flat sequence of 256 vectors" />
+<HtmlEmbed src="d3-patch-grid-unroll.html" title="Unrolling the 16×16 patch grid into a flat sequence of 256 vectors" desc="Each patch is a 32×32-pixel region of the image — not a single pixel. Hover any patch to see where it lands in the flat sequence." wide />
 
 First, though, we have to actually turn patches into patch embeddings in code. That takes a little PyTorch magic.
 
@@ -217,7 +222,7 @@ def tokenize_sample(sample, tokenizer, vlm_cfg):
 
 > 💡 The image token is a string like `"<|image|>"`, not an int. Repeat the string 256 times and let the tokenizer convert it to IDs — `input_ids.count(image_token_id)` should then come out to exactly 256.
 
-## Packing samples into batches
+## Packing Samples Into Batches
 
 One practical thing before training: how do we batch these samples? They vary wildly in length — a one-line caption next to a long multi-turn conversation. If we padded every sample up to the maximum length, most of each batch would be padding, and the GPU would spend almost all its time on tokens that mean nothing. So instead we pack: concatenate several samples back-to-back into one fixed-length sequence (here 2048 tokens) until the next sample won't fit, then pad just once at the very end. A single packed sequence can hold several samples — and therefore several images, each carrying its own block of 256 image tokens. This is a big part of what keeps the whole run cheap enough to fit our $100 budget.
 
@@ -255,30 +260,43 @@ After training, we decided to read the responses our model generates, and found 
 
 <Image src={responseMonkey} alt="SmolLM2-135M's response to a photo of a monkey" caption="SmolLM2-135M's reply — fluent text that has nothing to do with the monkey in the photo." />
 
-Hmm, what do we do now?
+"2D image with black background" 😭😭😭. Hmm, what do we do now?
 
 ### A bigger decoder
 
 In the beginning, we mentioned that the encoder-free approach makes sense if the decoder is powerful enough. Maybe the SmolLM with 135M params isn't big enough? Let's try to replace it with SmolLM2-360M-Instruct.
-After 8 hours of training, I generated the model's responses to several images. "2D image with black background" 😭😭😭.
+After 8 hours of training, I generated the model's responses to several images.
 
 <Image src={responseCat} alt="SmolLM2-360M's response to a photo of a cat" caption="A bigger decoder (SmolLM2-360M) — still describing things that aren't in the picture." />
 
 ### Trying an even bigger decoder and different data
 
-After two unsuccessful attempts, I decided to explore FineVision and discovered that it contains many "advanced" samples, like questions about chemical diagrams or images of LaTeX text. I thought this might be too much for a model that is only learning "to see", so tried to find subsets of FineVision with simpler samples.
+After two unsuccessful attempts, I decided to explore FineVision and discovered that it contains many "advanced" samples, like questions about chemical diagrams or images of LaTeX text. I thought this might be too much for a model that is only learning "to see," so I tried to find subsets of FineVision with simpler samples.
 
-I also scaled up the decoder to Qwen 3 1.7B. I tried to train the model using Qwen 3 1.7B on different subsets of FineVision, and you can see the validation and train loss curves here.
+I also scaled the decoder up to Qwen 3 1.7B and trained it on these different subsets of FineVision. You can see the validation loss curves below.
 
-<Image src={lossCurvesQwen3} alt="Training and validation loss curves for Qwen 3 1.7B" caption="<strong>TODO (experimental results):</strong> train / validation loss curves for the model with Qwen 3 1.7B — placeholder, replace with the real chart." />
+<Image src={lossCurvesQwen3} alt="Validation loss curves for Qwen 3 1.7B across five FineVision subsets" caption="Validation loss for Qwen 3 1.7B across five FineVision subsets. Only <strong>densefusion + sharegpt4v</strong> (pink) keeps decreasing — the smaller subsets overfit and curve back up." />
 
-Each run uses a different training and validation set, so you shouldn't compare the validation losses they achieve - just look at the behavior of the curves.
-For any run, every 10th sample in its training set was reserved for validation. 
+Each run uses a different training and validation set, so you shouldn't compare the validation losses across runs — just look at the behavior of each curve. For every run, every 10th sample in its training set was reserved for validation.
 
-The model overfitted smaller subsets, like 
-LLaVA_Instruct_150K, or even combinations of small subsets, like 
-LLaVA_Instruct_150K + lvis_instruct4v. We got good performance only on densefusion + sharegpt4v, which together contained [X] samples.
+The model overfit the smaller subsets, like LLaVA_Instruct_150K, and even combinations of small subsets, like LLaVA_Instruct_150K + lvis_instruct4v. We only got good performance on densefusion + sharegpt4v, which together contain about 1.15M samples.
 
-Finally, we have a model that can say something sensible about images!
+## Results
 
-> TODO: add samples from the trained model
+We trained our model on densefusion + sharegpt4v for 43 hours—and finally, we have a model that can say something sensible about images!
+Here, we take this model and ask it to describe a handful of images it hasn't seen during training. Most of its answers are now grounded in what's actually in the photo, though far from perfect (for example, it can mistake a cat for a dog).
+
+<Image src={responseSki} alt="The model's response to a photo of people on a ski slope" caption="" />
+
+<Image src={responseSf} alt="The model's response to a photo of a coastal landscape" caption="" />
+
+<Image src={responseTree} alt="The model's response to a photo of a red tree" caption="" />
+
+<Image src={responseDome} alt="The model's response to a photo of MIT's Great Dome" caption="" />
+
+<Image src={responseCat2} alt="The model's response to a photo of a cat on a couch" caption="" />
+
+
+## Thank you!
+Thank you for exploring encoder-free VLMs with us! 
+Feedback is greatly appreciated — feel free to reach out at nazar.drugov@huggingface.co.
