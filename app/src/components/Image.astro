@@ -617,13 +617,7 @@ const resolvedDownloadSrc = downloadSrc || originalSrc;
     max-width: 100%;
   }
 
-  /* Dark mode: invert luminosity while preserving color harmony */
-  :global([data-theme="dark"]) .image-wrapper img {
-    filter: invert(0.925) hue-rotate(180deg);
-  }
-
-  /* Apply same filter to zoomed images in dark mode */
-  :global([data-theme="dark"]) :global(.medium-zoom-image--opened) {
-    filter: invert(0.925) hue-rotate(180deg);
-  }
+  /* Images (photos, screenshots, rendered charts) are shown as-is in dark mode.
+     The previous dark-mode luminosity inversion turned real photos into negatives,
+     so it has been removed. Theme-aware diagrams use HtmlEmbed/CSS variables instead. */
 </style>

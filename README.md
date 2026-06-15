@@ -1,7 +1,7 @@
 ---
-title: 'Bringing paper to life: A modern template for scientific writing'
-short_desc: 'A practical journey behind training SOTA LLMs'
-emoji: 📝
+title: 'Encoder-Free VLM'
+short_description: 'Train your own encoder-free VLM for under $100'
+emoji: 👁️
 colorFrom: blue
 colorTo: indigo
 sdk: docker
