@@ -4,11 +4,9 @@
   .d3-architecture-comparison svg { width: 100%; height: auto; display: block; }
   .d3-architecture-comparison .panel-title { fill: var(--text-color); font-weight: 700; }
   .d3-architecture-comparison .box-title { fill: var(--text-color); font-weight: 700; }
-  .d3-architecture-comparison .box-sub { fill: var(--muted-color); }
-  .d3-architecture-comparison .note { fill: var(--muted-color); font-style: italic; }
-  .d3-architecture-comparison .frame { fill: none; stroke: var(--border-color); }
+  .d3-architecture-comparison .frame { stroke: var(--border-color); }
   .d3-architecture-comparison .node { cursor: pointer; }
-  .d3-architecture-comparison .node rect { transition: stroke-width .12s ease, filter .12s ease; }
+  .d3-architecture-comparison .node rect, .d3-architecture-comparison .node circle { transition: stroke-width .12s ease; }
   .d3-architecture-comparison .legend { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 12px; }
   .d3-architecture-comparison .legend-title { font-size: 12px; font-weight: 700; color: var(--text-color); }
   .d3-architecture-comparison .legend .items { display: flex; flex-wrap: wrap; gap: 8px 14px; }
@@ -38,13 +36,13 @@
       if (container.dataset) { if (container.dataset.mounted === 'true') return; container.dataset.mounted = 'true'; }
       container.style.position = container.style.position || 'relative';
 
-      // Named semantic palette — the article's figure descriptions specify colours by name
-      // (purple Image/Text, blue Encoder/Embedder, green Connector, pink Decoder). We keep
-      // them theme-aware by tinting toward --surface-bg and using --text-color for labels.
+      // Named semantic palette, kept theme-aware by tinting toward --surface-bg.
+      // Mirrors the colour roles in the source diagram: pink input, yellow norms,
+      // green attention, blue MLP, purple linear projection, grey positional table.
       const PAL = { blue: '#5B9BD5', green: '#5FB97F', pink: '#E27BA4', red: '#E06C6C', purple: '#9B82DE', yellow: '#E3B25A', teal: '#46AFB0', gray: '#98A2AD' };
-      const tint = (hex, amt) => `color-mix(in oklab, ${hex} ${Math.round((amt == null ? 0.3 : amt) * 100)}%, var(--surface-bg))`;
+      const tint = (hex, amt) => `color-mix(in oklab, ${hex} ${Math.round((amt == null ? 0.32 : amt) * 100)}%, var(--surface-bg))`;
 
-      // ---- single shared HTML tooltip (interactivity) ----
+      // ---- single shared HTML tooltip ----
       let tip = container.querySelector('.d3-tooltip'), tipInner;
       if (!tip) {
         tip = document.createElement('div'); tip.className = 'd3-tooltip';
@@ -54,34 +52,31 @@
       const showTip = (event, html) => { tipInner.innerHTML = html; const [px, py] = d3.pointer(event, container); tip.style.transform = `translate(${px + 14}px, ${py + 14}px)`; tip.style.opacity = '1'; };
       const hideTip = () => { tip.style.opacity = '0'; };
 
-      const VBW = 1000, VBH = 560;
+      const VBW = 1360, VBH = 490;
       const svg = d3.select(container).append('svg')
         .attr('viewBox', `0 0 ${VBW} ${VBH}`)
         .attr('preserveAspectRatio', 'xMidYMid meet')
         .style('width', '100%').style('height', 'auto').style('display', 'block');
 
       const defs = svg.append('defs');
-      defs.append('marker').attr('id', 'arch-arrow').attr('viewBox', '0 0 10 10').attr('refX', 8).attr('refY', 5)
-        .attr('markerWidth', 7).attr('markerHeight', 7).attr('orient', 'auto-start-reverse')
+      defs.append('marker').attr('id', 'arch-arrow').attr('viewBox', '0 0 10 10').attr('refX', 7).attr('refY', 5)
+        .attr('markerWidth', 7).attr('markerHeight', 7).attr('markerUnits', 'userSpaceOnUse').attr('orient', 'auto-start-reverse')
         .append('path').attr('d', 'M0,0 L10,5 L0,10 z').attr('fill', 'var(--muted-color)');
 
-      // a hoverable rounded box with title + optional wrapped subtitle + tooltip
-      function box(g, x, y, w, h, color, title, sub, tipHtml, titleSize) {
+      const arrow = (g, x1, y1, x2, y2) => g.append('path').attr('d', `M${x1},${y1} L${x2},${y2}`)
+        .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2).attr('marker-end', 'url(#arch-arrow)');
+      const elbow = (g, pts) => g.append('path').attr('d', 'M' + pts.map(p => p.join(',')).join(' L'))
+        .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2).attr('marker-end', 'url(#arch-arrow)');
+
+      // rounded box with one or more centred title lines + tooltip
+      function nodeBox(g, x, y, w, h, color, lines, tipHtml, fs) {
         const grp = g.append('g').attr('class', 'node');
         const rect = grp.append('rect').attr('x', x).attr('y', y).attr('width', w).attr('height', h)
-          .attr('rx', 14).attr('ry', 14)
-          .attr('fill', tint(color, 0.3)).attr('stroke', color).attr('stroke-width', 2);
-        const cx = x + w / 2;
-        const hasSub = sub && sub.length;
-        grp.append('text').attr('class', 'box-title').attr('x', cx)
-          .attr('y', hasSub ? y + h / 2 - 6 : y + h / 2)
-          .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-          .attr('font-size', titleSize || 20).text(title);
-        if (hasSub) {
-          const t = grp.append('text').attr('class', 'box-sub').attr('x', cx)
-            .attr('y', y + h / 2 + 14).attr('text-anchor', 'middle').attr('font-size', 11.5);
-          sub.forEach((line, i) => t.append('tspan').attr('x', cx).attr('dy', i === 0 ? 0 : 14).text(line));
-        }
+          .attr('rx', 9).attr('ry', 9).attr('fill', tint(color, 0.32)).attr('stroke', color).attr('stroke-width', 2);
+        const cx = x + w / 2, cy = y + h / 2, n = lines.length;
+        const t = grp.append('text').attr('class', 'box-title').attr('x', cx).attr('y', cy)
+          .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle').attr('font-size', fs || 13);
+        lines.forEach((ln, i) => t.append('tspan').attr('x', cx).attr('dy', i === 0 ? `${-(n - 1) * 0.55}em` : '1.1em').text(ln));
         if (tipHtml) {
           grp.on('mouseenter', () => rect.attr('stroke-width', 4))
             .on('mousemove', (e) => showTip(e, tipHtml))
@@ -89,65 +84,98 @@
         }
         return grp;
       }
-      const arrow = (g, x1, y1, x2, y2) => g.append('path').attr('d', `M${x1},${y1} L${x2},${y2}`)
-        .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2).attr('marker-end', 'url(#arch-arrow)');
-      const elbow = (g, pts) => g.append('path').attr('d', 'M' + pts.map(p => p.join(',')).join(' L'))
-        .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2).attr('marker-end', 'url(#arch-arrow)');
 
-      // One panel. enc = {label, sub, big, tip}
-      function panel(yTop, panelTitle, enc) {
-        const g = svg.append('g');
-        g.append('text').attr('class', 'panel-title').attr('x', 16).attr('y', yTop + 4).attr('font-size', 19).text(panelTitle);
-
-        const fx = 8, fy = yTop + 20, fw = VBW - 16, fh = 210;
-        g.append('rect').attr('class', 'frame').attr('x', fx).attr('y', fy).attr('width', fw).attr('height', fh).attr('rx', 14).attr('stroke-width', 1.5);
-
-        const mainY = fy + 80;   // centre line of the main pipeline row
-        const textY = fy + 165;  // centre line of the Text Tokens row
-
-        // inputs (purple)
-        box(g, 36, mainY - 29, 130, 58, PAL.purple, 'Image', null, '<b>Image</b><br>The raw input image, standardised to 512×512×3.', 18);
-        box(g, 36, textY - 26, 130, 52, PAL.purple, 'Text Tokens', null, '<b>Text Tokens</b><br>The user’s prompt, tokenised — fed straight into the decoder.', 17);
-
-        // encoder / embedder (blue). Big in the classical panel, tiny in the encoder-free panel.
-        const encX = 320;
-        const encW = enc.big ? 300 : 96;
-        const encH = enc.big ? 120 : 40;
-        box(g, encX, mainY - encH / 2, encW, encH, PAL.blue, enc.label, enc.big ? enc.sub : null, enc.tip, enc.big ? 20 : 12.5);
-        const encRight = encX + encW;
-        if (!enc.big) {
-          // annotate how much smaller it is
-          g.append('text').attr('class', 'note').attr('x', encX + encW / 2).attr('y', mainY + encH / 2 + 18)
-            .attr('text-anchor', 'middle').attr('font-size', 12).text('~35M params · ~15× smaller');
+      // small "+" residual-add node
+      function addNode(g, cx, cy, tipHtml) {
+        const grp = g.append('g').attr('class', 'node');
+        const c = grp.append('circle').attr('cx', cx).attr('cy', cy).attr('r', 12)
+          .attr('fill', 'var(--surface-bg)').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2);
+        grp.append('text').attr('x', cx).attr('y', cy + 1).attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+          .attr('font-size', 17).attr('fill', 'var(--text-color)').text('+');
+        if (tipHtml) {
+          grp.on('mouseenter', () => c.attr('stroke-width', 3.5))
+            .on('mousemove', (e) => showTip(e, tipHtml))
+            .on('mouseleave', () => { c.attr('stroke-width', 2); hideTip(); });
         }
+        return { cx, cy };
+      }
 
-        // connector (green) + decoder (pink)
-        const coX = 720, coW = 120, coH = 64;
-        box(g, coX, mainY - coH / 2, coW, coH, PAL.green, 'Connector', null, '<b>Connector</b><br>A single linear layer projecting embeddings to the decoder’s hidden size.', 18);
-        const deX = 880, deW = 104, deH = 92;
-        box(g, deX, mainY - deH / 2, deW, deH, PAL.pink, 'Decoder', ['(LM)'], '<b>Decoder (LM)</b><br>The language model. Reads image + text embeddings and generates text.', 20);
+      const flattenedInput = (x, cy) => nodeBox(svg, x, cy - 40, 72, 80, PAL.red, ['Flattened', 'Patches'],
+        '<b>Flattened patches</b><br>The image cut into 32×32 patches, each flattened to a 3072-long vector.', 11);
 
-        // arrows along the main row (all horizontal)
-        arrow(g, 166, mainY, encX - 4, mainY);
-        arrow(g, encRight, mainY, coX - 4, mainY);
-        arrow(g, coX + coW, mainY, deX - 4, mainY);
+      // one pre-norm transformer block: Norm → Attention → ⊕ → Norm → MLP → ⊕, with two residuals
+      function block(bx, by, bw, bh, cy) {
+        const g = svg.append('g');
+        g.append('rect').attr('class', 'frame').attr('x', bx).attr('y', by).attr('width', bw).attr('height', bh)
+          .attr('rx', 14).attr('stroke-width', 1.5)
+          .attr('fill', 'color-mix(in oklab, var(--muted-color) 7%, var(--surface-bg))');
 
-        // Text Tokens bypasses encoder + connector, entering the decoder from below
-        const deCx = deX + deW / 2;
-        elbow(g, [[166, textY], [deCx, textY], [deCx, mainY + deH / 2 + 4]]);
+        const resY = by + bh - 28;  // row where residual skip lines run
+        nodeBox(g, bx + 16, cy - 33, 42, 66, PAL.yellow, ['Norm'], '<b>LayerNorm</b><br>Normalises each token before attention (pre-norm).', 12);
+        nodeBox(g, bx + 74, cy - 42, 78, 84, PAL.green, ['Multi-Head', 'Attention'], '<b>Multi-head self-attention</b><br>Mixes information across all patches.', 12);
+        addNode(g, bx + 176, cy, '<b>Residual add</b><br>Adds the block input back to the attention output.');
+        nodeBox(g, bx + 196, cy - 33, 42, 66, PAL.yellow, ['Norm'], '<b>LayerNorm</b><br>Normalises again before the MLP.', 12);
+        nodeBox(g, bx + 252, cy - 33, 54, 66, PAL.blue, ['MLP'], '<b>Feed-forward MLP</b><br>Two linear layers with a non-linearity, applied per token.', 13);
+        addNode(g, bx + 324, cy, '<b>Residual add</b><br>Adds the MLP input back to the MLP output.');
+
+        // main horizontal flow
+        arrow(g, bx + 2, cy, bx + 16, cy);
+        arrow(g, bx + 58, cy, bx + 74, cy);
+        arrow(g, bx + 152, cy, bx + 164, cy);
+        arrow(g, bx + 188, cy, bx + 196, cy);
+        arrow(g, bx + 238, cy, bx + 252, cy);
+        arrow(g, bx + 306, cy, bx + 312, cy);
+        arrow(g, bx + 336, cy, bx + bw - 2, cy);
+
+        // residual skip connections (run under the row, feed the ⊕ nodes from below)
+        elbow(g, [[bx + 8, cy], [bx + 8, resY], [bx + 176, resY], [bx + 176, cy + 12]]);
+        elbow(g, [[bx + 192, cy], [bx + 192, resY], [bx + 324, resY], [bx + 324, cy + 12]]);
       }
 
       function render() {
         svg.selectAll('g').remove();
-        panel(24, 'Classical VLM', {
-          label: 'Vision Encoder', big: true,
-          sub: ['ViT, e.g. 550M params in Gemma 4', 'pretrained; many transformer layers'],
-          tip: '<b>Vision Encoder</b><br>A pretrained Vision Transformer — ~550M params, many attention layers. Turns pixels into visual tokens.'
-        });
-        panel(304, 'Encoder-Free VLM (this notebook)', {
-          label: 'Embedder', big: false,
-          tip: '<b>Embedder</b><br>No pretraining, no transformer layers — ~35M params (~15× smaller). Just patchify → linear projection → positional embeddings.'
-        });
+
+        // ---------- TOP: vision encoder ----------
+        svg.append('text').attr('class', 'panel-title').attr('x', 16).attr('y', 30).attr('font-size', 18)
+          .text('Vision encoder (many transformer blocks)');
+
+        const encCy = 150, blkTop = 72, blkH = 190, blkW = 346;
+        flattenedInput(16, encCy);
+        const bx1 = 108, bx2 = 490, bx3 = 940;
+        [bx1, bx2, bx3].forEach((bx) => block(bx, blkTop, blkW, blkH, encCy));
+
+        arrow(svg, 88, encCy, bx1 - 2, encCy);
+        arrow(svg, bx1 + blkW + 2, encCy, bx2 - 2, encCy);
+        arrow(svg, bx2 + blkW + 2, encCy, 858, encCy);
+        [872, 890, 908].forEach((dx) => svg.append('circle').attr('cx', dx).attr('cy', encCy).attr('r', 3.4).attr('fill', 'var(--muted-color)'));
+        arrow(svg, 922, encCy, bx3 - 2, encCy);
+        arrow(svg, bx3 + blkW + 2, encCy, 1344, encCy);
+
+        // ---------- BOTTOM: embedder (deliberately smaller than one encoder block) ----------
+        svg.append('text').attr('class', 'panel-title').attr('x', 16).attr('y', 300).attr('font-size', 18).text('Embedder');
+
+        const emCy = 372, emTop = 316, emH = 148, emBx = 108, emW = 300;
+        const eg = svg.append('g');
+        eg.append('rect').attr('class', 'frame').attr('x', emBx).attr('y', emTop).attr('width', emW).attr('height', emH)
+          .attr('rx', 14).attr('stroke-width', 1.5)
+          .attr('fill', 'color-mix(in oklab, var(--muted-color) 7%, var(--surface-bg))');
+
+        flattenedInput(16, emCy);
+        nodeBox(eg, emBx + 16, emCy - 24, 40, 48, PAL.yellow, ['Layer', 'Norm'], '<b>LayerNorm</b><br>Normalises each flattened patch.', 10);
+        nodeBox(eg, emBx + 66, emCy - 24, 70, 48, PAL.purple, ['Linear', 'Projection'], '<b>Linear projection</b><br>One learned matrix mapping 3072 → hidden_size. The only "real" layer.', 10);
+        nodeBox(eg, emBx + 146, emCy - 24, 40, 48, PAL.yellow, ['Layer', 'Norm'], '<b>LayerNorm</b><br>Normalises after projection.', 10);
+        addNode(eg, emBx + 212, emCy, '<b>Add positional embedding</b><br>Adds the factorised row + column position vectors.');
+        nodeBox(eg, emBx + 232, emCy - 24, 40, 48, PAL.yellow, ['Layer', 'Norm'], '<b>LayerNorm</b><br>Final normalisation before output.', 10);
+        nodeBox(eg, emBx + 168, emCy + 32, 88, 34, PAL.gray, ['Positional', 'Embedding'], '<b>Positional embedding</b><br>Factorised row + column tables, added to every patch.', 9.5);
+
+        arrow(eg, 88, emCy, emBx - 2, emCy);
+        arrow(eg, emBx + 2, emCy, emBx + 16, emCy);
+        arrow(eg, emBx + 56, emCy, emBx + 66, emCy);
+        arrow(eg, emBx + 136, emCy, emBx + 146, emCy);
+        arrow(eg, emBx + 186, emCy, emBx + 202, emCy);
+        arrow(eg, emBx + 222, emCy, emBx + 232, emCy);
+        arrow(eg, emBx + 272, emCy, emW + emBx - 2, emCy);
+        arrow(eg, emBx + 212, emCy + 32, emBx + 212, emCy + 12);   // positional table → ⊕
       }
       render();
 
@@ -155,12 +183,12 @@
       let legend = container.querySelector('.legend');
       if (!legend) { legend = document.createElement('div'); legend.className = 'legend'; legend.innerHTML = '<div class="legend-title">Legend</div><div class="items"></div>'; container.appendChild(legend); }
       const items = legend.querySelector('.items'); items.innerHTML = '';
-      [['Inputs', PAL.purple], ['Vision Encoder / Embedder', PAL.blue], ['Connector', PAL.green], ['Decoder (LM)', PAL.pink]].forEach(([name, color]) => {
+      [['Flattened patches', PAL.red], ['LayerNorm', PAL.yellow], ['Multi-Head Attention', PAL.green], ['MLP', PAL.blue], ['Linear Projection', PAL.purple], ['Positional Embedding', PAL.gray]].forEach(([name, color]) => {
         const el = document.createElement('span'); el.className = 'item';
-        const sw = document.createElement('span'); sw.className = 'swatch'; sw.style.background = tint(color, 0.3); sw.style.borderColor = color;
+        const sw = document.createElement('span'); sw.className = 'swatch'; sw.style.background = tint(color, 0.32); sw.style.borderColor = color;
         const tx = document.createElement('span'); tx.textContent = name; el.appendChild(sw); el.appendChild(tx); items.appendChild(el);
       });
-      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover any block for details.'; container.appendChild(h); }
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover any block for details. The + nodes are residual (skip) connections. The encoder runs many such blocks; the embedder has none.'; container.appendChild(h); }
 
       if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
       else { window.addEventListener('resize', render); }

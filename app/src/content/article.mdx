@@ -49,9 +49,9 @@ The vision encoder is usually a Vision Transformer. It takes the raw image, spli
 ## Are Encoders Really Necessary?
 
 Have you ever wondered whether the encoders are absolutely necessary? Someone at DeepMind did, and they found the answer is no.
-Here is one intuitive way to think about this: the encoder's job is to turn pixels into vectors that the language model can make sense of. If the language model is powerful enough, and has seen enough image-text data during training, maybe it doesn't need those vectors pre-chewed. Maybe it can extract the visual meaning itself. So the vision encoder gets replaced from a 550M-parameter transformer with a thing called embedder. Here is the visualization of embedder in Gemma 4 12B compared to a vision encoder.
+Here is one intuitive way to think about this: the encoder's job is to turn pixels into vectors that the language model can make sense of. If the language model is powerful enough, and has seen enough image-text data during training, maybe it doesn't need those vectors pre-chewed. Maybe it can extract the visual meaning itself. So the vision encoder gets replaced from a large transformer with a thing called embedder. Here is the visualization of embedder in Gemma 4 12B compared to a vision encoder.
 
-<HtmlEmbed src="d3-architecture-comparison.html" title="Classical VLM vs. Encoder-Free VLM" desc="The only difference: a heavy 550M-parameter pretrained encoder becomes a tiny ~35M-parameter embedder: about 15× smaller." />
+<HtmlEmbed src="d3-architecture-comparison.html" title="The embedder vs. a vision encoder" desc="A vision encoder stacks many transformer blocks (Norm, Multi-Head Attention, MLP, with residual connections). The embedder is just LayerNorms, one linear projection, and positional embeddings." wide />
 
 The audio encoder gets cut even more - raw amplitude samples go straight through one linear projection.
 But, if models with encoders work well, why would we want to throw the encoders away? Does being encoder-free offer any advantages?
