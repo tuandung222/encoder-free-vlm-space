@@ -49,9 +49,9 @@ The vision encoder is usually a Vision Transformer. It takes the raw image, spli
 ## Are Encoders Really Necessary?
 
 Have you ever wondered whether the encoders are absolutely necessary? Someone at DeepMind did, and they found the answer is no.
-Here is one intuitive way to think about this: the encoder's job is to turn pixels into vectors that the language model can make sense of. If the language model is powerful enough — and has seen enough image-text data during training — maybe it doesn't need those vectors pre-chewed. Maybe it can extract the visual meaning itself. So the vision encoder gets replaced from a 550M-parameter transformer with a thing called embedder. Here is the visualization of embedder in Gemma 4 12B compared to a vision encoder.
+Here is one intuitive way to think about this: the encoder's job is to turn pixels into vectors that the language model can make sense of. If the language model is powerful enough, and has seen enough image-text data during training, maybe it doesn't need those vectors pre-chewed. Maybe it can extract the visual meaning itself. So the vision encoder gets replaced from a 550M-parameter transformer with a thing called embedder. Here is the visualization of embedder in Gemma 4 12B compared to a vision encoder.
 
-<HtmlEmbed src="d3-architecture-comparison.html" title="Classical VLM vs. Encoder-Free VLM" desc="The only difference: a heavy 550M-parameter pretrained encoder becomes a tiny ~35M-parameter embedder — about 15× smaller." />
+<HtmlEmbed src="d3-architecture-comparison.html" title="Classical VLM vs. Encoder-Free VLM" desc="The only difference: a heavy 550M-parameter pretrained encoder becomes a tiny ~35M-parameter embedder: about 15× smaller." />
 
 The audio encoder gets cut even more - raw amplitude samples go straight through one linear projection.
 But, if models with encoders work well, why would we want to throw the encoders away? Does being encoder-free offer any advantages?
@@ -61,7 +61,7 @@ It does. Two things in particular:
 1. Easier to fine-tune. With encoders, you usually freeze them and train only the language model, which means the encoders never improve, and you have to keep the separate parts working together.. There's only one model now, so when you train it, everything updates at once.
 2. Lower latency. The language model must wait until the image is processed by the encoder or the embedder. Since the embedder is much smaller, language model's wait time is much lower, which leads to overall lower latency of a forward pass.
 
-Now that we've learned that encoder-free models are cool, let's build one. Specifically, we'll build a model that takes an image and text as input. We skip audio and video — handling them would make the post much longer, and the image case illustrates the key ideas on its own 🙂.
+Now that we've learned that encoder-free models are cool, let's build one. Specifically, we'll build a model that takes an image and text as input. We skip audio and video. Handling them would make the post much longer, and the image case illustrates the key ideas on its own 🙂.
 We will train the model on a single H100 for 40–50 hours. Renting an H100 costs about \$2 per hour, so the total cost of the run is about \$100.
 
 ## The Goal
@@ -76,7 +76,7 @@ We need to find a way to feed images into the language model.
 
 What we have is an image. What we want is a sequence of vectors that (a) carry information about that image and (b) have the right dimension to be fed into the language model alongside text token embeddings.
 
-The idea is to divide the image into square patches and convert each patch into a vector — a patch embedding. This is tricky to implement if we want to fully process images of different sizes. So instead we will standardize every image to the same shape first: resize the shorter side to 512 pixels (keeping the aspect ratio, which upscales the image if it's smaller than that), then crop out the central 512×512 square. In code this is three lines:
+The idea is to divide the image into square patches and convert each patch into a vector: a patch embedding. This is tricky to implement if we want to fully process images of different sizes. So instead we will standardize every image to the same shape first: resize the shorter side to 512 pixels (keeping the aspect ratio, which upscales the image if it's smaller than that), then crop out the central 512×512 square. In code this is three lines:
 
 ```python
 transform = transforms.Compose([
@@ -86,7 +86,7 @@ transform = transforms.Compose([
 ])
 ```
 
-So a tiny image isn't a problem — it just gets scaled up until its shorter side is 512, then center-cropped. Every image, big or small, comes out as a 512×512×3 tensor of pixel values in [0, 1].
+So a tiny image isn't a problem: it just gets scaled up until its shorter side is 512, then center-cropped. Every image, big or small, comes out as a 512×512×3 tensor of pixel values in [0, 1].
 
 <HtmlEmbed src="d3-resize-crop.html" title="Standardizing any image to 512×512" desc="Resize the shorter side to 512, then crop out the central 512×512 square." />
 
@@ -94,7 +94,7 @@ Now we divide that 512×512 image into 32×32 patches. That creates a 16×16 gri
 
 The patches start life in a 2D arrangement, but the language model eats a 1D sequence. So we have to flatten the grid into a list. What's the right order to put the patch embeddings in? The order doesn't really matter because the transformer's attention is permutation-equivariant. What matters is that each patch embedding contains information about its original 2D position in the grid of patches.
 
-<HtmlEmbed src="d3-patch-grid-unroll.html" title="Unrolling the 16×16 patch grid into a flat sequence of 256 vectors" desc="Each patch is a 32×32-pixel region of the image — not a single pixel. Hover any patch to see where it lands in the flat sequence." wide />
+<HtmlEmbed src="d3-patch-grid-unroll.html" title="Unrolling the 16×16 patch grid into a flat sequence of 256 vectors" desc="Each patch is a 32×32-pixel region of the image, not a single pixel. Hover any patch to see where it lands in the flat sequence." wide />
 
 First, though, we have to actually turn patches into patch embeddings in code. That takes a little PyTorch magic.
 
@@ -138,11 +138,11 @@ self.ln2 = nn.LayerNorm(hidden_size)    # normalize after projection
 
 ### Add positional information to patch embeddings
 
-After these steps, every patch embedding only contains information about patch's pixel values — the model has no idea where in the image a flattened patch came from. We need to inject that spatial information.
+After these steps, every patch embedding only contains information about patch's pixel values. The model has no idea where in the image a flattened patch came from. We need to inject that spatial information.
 
 <HtmlEmbed src="d3-positional-add.html" title="Adding Positional Information" desc="Positional information is simply added, element-wise, to each patch embedding." />
 
-The simplest approach: learn one embedding vector per patch position. For each position (𝑖,𝑗) in the 16×16 grid, you may store a learned vector of length D. This requires a table of shape (16, 16, D) — 256×D parameters, one independent vector per cell.
+The simplest approach: learn one embedding vector per patch position. For each position (𝑖,𝑗) in the 16×16 grid, you may store a learned vector of length D. This requires a table of shape (16, 16, D): 256×D parameters, one independent vector per cell.
 
 A more parameter-efficient approach: factor the grid into separate row and column tables of shape (16, D) each, and define the positional embedding for patch (𝑖,𝑗) as the sum of the row and column entries:
 
@@ -152,9 +152,9 @@ pos(i, j) = E_row[i] + E_col[j]
 
 With this approach, E_row[i] may learn to encode "this patch is at row i" and E_col[j] may learn to encode "this patch is at column j". E_row[i] + E_col[j] may encode "this patch is at row i and column j".
 
-With M=16, the factorized tables use 2·16·hidden_size = 32·hidden_size parameters instead of 16·16·hidden_size = 256·hidden_size for the full table — 8× fewer. The tables also generalize to different image sizes by slicing `E_row[:nh]` and `E_col[:nw]`.
+With M=16, the factorized tables use 2·16·hidden_size = 32·hidden_size parameters instead of 16·16·hidden_size = 256·hidden_size for the full table, 8× fewer. The tables also generalize to different image sizes by slicing `E_row[:nh]` and `E_col[:nw]`.
 
-<HtmlEmbed src="d3-positional-tables.html" title="Full Table vs. Factorized Approach" desc="The factorized row + column tables use 32·hidden_size parameters instead of 256·hidden_size — an 8× saving." />
+<HtmlEmbed src="d3-positional-tables.html" title="Full Table vs. Factorized Approach" desc="The factorized row + column tables use 32·hidden_size parameters instead of 256·hidden_size, an 8× saving." />
 
 We use the parameter-efficient approach so our architecture matches Gemma 4 12B. Instead of learning a separate embedding for each of the 256 grid positions, we learn just one embedding per row and one per column. Each patch's positional embedding is then simply the sum of its row embedding and its column embedding. We build all 256 positional embeddings in one step using broadcasting.
 
@@ -184,9 +184,9 @@ In code, the forward pass does three things:
 
 The sequence fed to the LM looks like:
 
-<HtmlEmbed src="d3-image-text-sequence.html" title="The sequence fed to the language model" desc="256 placeholder image slots, then the text tokens, then the generated answer — all one flat sequence." />
+<HtmlEmbed src="d3-image-text-sequence.html" title="The sequence fed to the language model" desc="256 placeholder image slots, then the text tokens, then the generated answer, all one flat sequence." />
 
-One small piece sits between the embedder and step 3: the connector. The vision embedder already outputs hidden_size-dim vectors — exactly the decoder's hidden size — so technically we could feed them straight in. But we still pass them through one more linear layer (hidden_size → hidden_size) to mirror Gemma 4 12B's architecture. It's a single matrix.
+One small piece sits between the embedder and step 3: the connector. The vision embedder already outputs hidden_size-dim vectors, exactly the decoder's hidden size, so technically we could feed them straight in. But we still pass them through one more linear layer (hidden_size → hidden_size) to mirror Gemma 4 12B's architecture. It's a single matrix.
 
 The overwrite in step 3 is the heart of it, and it's a one-liner. We find every position holding an image token, then assign the patch embeddings into exactly those positions:
 
@@ -196,13 +196,13 @@ combined = token_embd.clone()
 combined[mask] = image_embd.reshape(-1, image_embd.shape[-1]).to(combined.dtype)
 ```
 
-After this, the language model sees one flat sequence of vectors — image patches and text tokens side by side — and processes them with the same attention layers. 
+After this, the language model sees one flat sequence of vectors, image patches and text tokens side by side, and processes them with the same attention layers. 
 
 But there are some important nuances in getting that sequence built.
 
-Instruction-tuned LMs don't take raw text — they expect a specific format, with special tokens marking where each turn begins and ends. For each sample from the trainset, we create a list of `{"role": ..., "content": ...}` dicts. We prepend 256 copies of the string `"<|image|>"` to the first user message. We call `tokenizer.apply_chat_template(messages, tokenize=False)`, passing a list of `{"role": ..., "content": ...}` dicts. It combines the conversation into a single formatted string — with `<|im_start|>`, `<|im_end|>`, and other special tokens inserted in the right places.
+Instruction-tuned LMs don't take raw text: they expect a specific format, with special tokens marking where each turn begins and ends. For each sample from the trainset, we create a list of `{"role": ..., "content": ...}` dicts. We prepend 256 copies of the string `"<|image|>"` to the first user message. We call `tokenizer.apply_chat_template(messages, tokenize=False)`, passing a list of `{"role": ..., "content": ...}` dicts. It combines the conversation into a single formatted string, with `<|im_start|>`, `<|im_end|>`, and other special tokens inserted in the right places.
 
-Then `tokenizer.encode(text)` converts that string to a list of token IDs. `input_ids` ends up with exactly 256 consecutive image token IDs at the start of the user turn — one slot per patch.
+Then `tokenizer.encode(text)` converts that string to a list of token IDs. `input_ids` ends up with exactly 256 consecutive image token IDs at the start of the user turn, one slot per patch.
 
 ```python
 def tokenize_sample(sample, tokenizer, vlm_cfg):
@@ -218,7 +218,7 @@ def tokenize_sample(sample, tokenizer, vlm_cfg):
     return tokenizer.encode(text)
 ```
 
-> 💡 The image token is a string like `"<|image|>"`, not an int. Repeat the string 256 times and let the tokenizer convert it to IDs — `input_ids.count(image_token_id)` should then come out to exactly 256.
+> 💡 The image token is a string like `"<|image|>"`, not an int. Repeat the string 256 times and let the tokenizer convert it to IDs. `input_ids.count(image_token_id)` should then come out to exactly 256.
 
 ## Packing Samples Into Batches
 
@@ -264,7 +264,7 @@ We wanted to see how small the decoder could be while still performing reasonabl
 
 After training, we decided to read the responses our model generates, and found that most are of this quality:
 
-<Image src={responseMonkey} alt="SmolLM2-135M's response to a photo of a monkey" caption="SmolLM2-135M's reply — fluent text that has nothing to do with the monkey in the photo." />
+<Image src={responseMonkey} alt="SmolLM2-135M's response to a photo of a monkey" caption="SmolLM2-135M's reply: fluent text that has nothing to do with the monkey in the photo." />
 
 "2D image with black background" 😭😭😭. Hmm, what do we do now?
 
@@ -274,7 +274,7 @@ In the beginning, we mentioned that the encoder-free approach makes sense if the
 
 After 8 hours of training, we generated the model's responses to several images.
 
-<Image src={responseCat} alt="SmolLM2-360M's response to a photo of a cat" caption="A bigger decoder (SmolLM2-360M) — still describing things that aren't in the picture." />
+<Image src={responseCat} alt="SmolLM2-360M's response to a photo of a cat" caption="A bigger decoder (SmolLM2-360M), still describing things that aren't in the picture." />
 
 ### Trying an even bigger decoder and different data
 
@@ -282,15 +282,15 @@ After two unsuccessful attempts, we decided to explore FineVision and discovered
 
 We also scaled the decoder up to Qwen 3 1.7B and trained it on these different subsets of FineVision. You can see the validation loss curves below.
 
-<Image src={lossCurvesQwen3} alt="Validation loss curves for Qwen 3 1.7B across five FineVision subsets" caption="Validation loss for Qwen 3 1.7B across five FineVision subsets. Only <strong>densefusion + sharegpt4v</strong> (pink) keeps decreasing — the smaller subsets overfit and curve back up." />
+<Image src={lossCurvesQwen3} alt="Validation loss curves for Qwen 3 1.7B across five FineVision subsets" caption="Validation loss for Qwen 3 1.7B across five FineVision subsets. Only <strong>densefusion + sharegpt4v</strong> (pink) keeps decreasing. The smaller subsets overfit and curve back up." />
 
-Each run uses a different training and validation set, so you shouldn't compare the validation losses across runs — just look at the behavior of each curve. For every run, every 10th sample in its training set was reserved for validation.
+Each run uses a different training and validation set, so you shouldn't compare the validation losses across runs. Just look at the behavior of each curve. For every run, every 10th sample in its training set was reserved for validation.
 
 The model overfit the smaller subsets, like LLaVA_Instruct_150K, and even combinations of small subsets, like LLaVA_Instruct_150K + lvis_instruct4v. We only got good performance on densefusion + sharegpt4v, which together contain about 1.15M samples.
 
 ## Results
 
-We trained our model on densefusion + sharegpt4v for 43 hours—and finally, we have a model that can say something sensible about images!
+We trained our model on densefusion + sharegpt4v for 43 hours, and finally, we have a model that can say something sensible about images!
 Here, we take this model and ask it to describe a handful of images it hasn't seen during training. Most of its answers are now grounded in what's actually in the photo, though far from perfect (for example, it can mistake a cat for a dog).
 
 <Image src={responseSki} alt="The model's response to a photo of people on a ski slope" caption="" />
