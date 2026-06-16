@@ -111,10 +111,10 @@
           .attr('fill', 'color-mix(in oklab, var(--muted-color) 7%, var(--surface-bg))');
 
         const resY = by + bh - 28;  // row where residual skip lines run
-        nodeBox(g, bx + 16, cy - 33, 42, 66, PAL.yellow, ['Norm'], '<b>LayerNorm</b><br>Normalises each token before attention (pre-norm).', 12);
+        nodeBox(g, bx + 16, cy - 33, 42, 66, PAL.yellow, ['Layer', 'Norm'], '<b>LayerNorm</b><br>Normalises each token before attention (pre-norm).', 11);
         nodeBox(g, bx + 74, cy - 42, 78, 84, PAL.green, ['Multi-Head', 'Attention'], '<b>Multi-head self-attention</b><br>Mixes information across all patches.', 12);
         addNode(g, bx + 176, cy, '<b>Residual add</b><br>Adds the block input back to the attention output.');
-        nodeBox(g, bx + 196, cy - 33, 42, 66, PAL.yellow, ['Norm'], '<b>LayerNorm</b><br>Normalises again before the MLP.', 12);
+        nodeBox(g, bx + 196, cy - 33, 42, 66, PAL.yellow, ['Layer', 'Norm'], '<b>LayerNorm</b><br>Normalises again before the MLP.', 11);
         nodeBox(g, bx + 252, cy - 33, 54, 66, PAL.blue, ['MLP'], '<b>Feed-forward MLP</b><br>Two linear layers with a non-linearity, applied per token.', 13);
         addNode(g, bx + 324, cy, '<b>Residual add</b><br>Adds the MLP input back to the MLP output.');
 
