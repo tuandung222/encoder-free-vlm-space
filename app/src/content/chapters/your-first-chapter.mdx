@@ -1,1 +1,254 @@
-# this is an example chapter
+On June 3, Google DeepMind released Gemma 4 12B Unified — a multimodal model with a very special encoder-free architecture. In this blog, we'll find out why it's so cool, and then we'll train our own encoder-free model for under $100.
+
+## Classical Multimodal Models
+
+A model that takes images, audio, and text as input and generates text as output typically consists of three transformers stitched together.
+
+[Diagram: three stacked transformer blocks feeding one sequence — a vision encoder (image → visual tokens) and an audio encoder (waveform → audio tokens) on the left, each followed by a small connector, both feeding into the language model on the right, which emits text. Arrows show the image and audio paths must finish before the LM begins.]
+
+The vision encoder is usually a Vision Transformer. It takes the raw image, splits it into patches, converts each patch into a vector, and runs many attention layers over them to produce a sequence of embeddings rich with visual meaning. It was pretrained on hundreds of millions of image–text pairs, so it already "knows" a lot about the visual world. Similarly, the audio encoder turns a raw waveform into a sequence of vectors called audio embeddings, again using a stack of attention layers. After a sequence of embeddings leaves an encoder, each embedding in that sequence gets multiplied with a matrix called connector to project it to the dimension the language model expects.
+
+Have you ever wondered whether the vision and audio encoders are absolutely necessary? I hadn't. But someone at DeepMind did, and they found the answer is no.
+
+Here is one intuitive way to think about this: the encoder's job is to turn pixels into vectors the language model can make sense of. If the language model is powerful enough — and has seen enough image-text data during training — maybe it doesn't need those vectors pre-chewed. Maybe it can extract the visual meaning itself. So the vision encoder gets replaced from a 550M-parameter transformer with a thing called embedder. Here is the visualization of embedder in Gemma 4 12B compared to a vision encoder.
+
+[Figure — Classical vs Encoder-Free VLM. A stacked, two-panel architecture comparison, hand-drawn / sketch style with soft pastel fills and rounded boxes. TOP panel, titled "Classical VLM": a left-to-right flow. On the left, a purple "Image" box and, below it, a purple "Text Tokens" box. "Image" arrows into a large blue "Vision Encoder" box (subtitle: "ViT, e.g. 550M params in Gemma 4; pretrained; many transformer layers"), which arrows into a green "Connector" box, which arrows into a pink "Decoder (LM)" box. The "Text Tokens" box arrows directly into the Decoder, bypassing the encoder/connector. BOTTOM panel, titled "Encoder-Free VLM (this notebook)": the exact same layout, but the blue box is now labeled "Embedder" (subtitle: "no pretraining; no transformer layers; ~35M params"), arrowing into the green "Connector" then the pink "Decoder (LM)"; "Text Tokens" again arrows straight into the Decoder. The two panels are drawn perfectly parallel so the single difference — a heavy pretrained encoder vs a tiny embedder — is what stands out.]
+
+The audio encoder gets cut even more — raw amplitude samples go straight through one linear projection.
+
+But, if models with encoders work well, why would we want to throw the encoders away? Does being encoder-free offer any advantages?
+
+It does. Two things in particular:
+
+1. Easier to fine-tune. With encoders, you usually freeze them and train only the language model, which means the encoders never improve and you have to keep the separate parts working together — more moving parts, more to go wrong. There's only one model now, so when you train it, everything updates at once.
+2. Lower latency. The language model must wait until the image is processed by the encoder or the embedder. Since the embedder is much smaller, language model's wait time is much lower, which leads to overall lower latency of a forward pass.
+
+Now that we've learned that encoder-free models are cool, let's build one. Specifically, we'll build a model that takes an image and text as input. We skip audio and video — handling them would make the post much longer, and the image case illustrates the key ideas on its own. :)
+
+## The Goal
+
+To summarize: we want a model that takes in an image and a question about that image, and outputs text that accurately answers the question. And, because we're fancy, we want to do it without a large pretrained transformer encoder.
+
+Hmm, where do we start?
+
+We need to find a way to feed images into the language model.
+
+## Building the Embedder
+
+What we have is an image. What we want is a sequence of vectors that (a) carry information about that image and (b) have the right dimension to be fed into the language model alongside text token embeddings.
+
+The idea is to divide the image into square patches and convert each patch into a vector — a patch embedding. This is tricky to implement if we want to fully process images of different sizes. So instead we will standardize every image to the same shape first: resize the shorter side to 512 pixels (keeping the aspect ratio, which upscales the image if it's smaller than that), then crop out the central 512×512 square. In code this is three lines:
+
+```python
+transform = transforms.Compose([
+    transforms.Resize(512),        # resize shorter side to 512 (upscales small images)
+    transforms.CenterCrop(512),    # crop to exactly 512×512
+    transforms.ToTensor(),         # H×W×C uint8 → C×H×W float in [0, 1]
+])
+```
+
+So a tiny image isn't a problem — it just gets scaled up until its shorter side is 512, then center-cropped. Every image, big or small, comes out as a 512×512×3 tensor of pixel values in [0, 1].
+
+Now we divide that 512×512 image into 32×32 patches. That creates a 16×16 grid of patches. If we flatten a patch, we get a vector of length 3×32×32 = 3072 (images are RGB). We have 16 × 16 = 256 such vectors.
+
+The patches start life in a 2D arrangement, but the language model eats a 1D sequence. So we have to flatten the grid into a list. What's the right order to put the patch embeddings in? The order doesn't really matter because the transformer's attention is permutation-equivariant. What matters is that each patch embedding contains information about its original 2D position in the grid of patches.
+
+[Diagram: a 16×16 grid of image patches, each cell labeled with its 2D position (x, y). An arrow shows the grid being unrolled row-by-row into a flat sequence of 256 vectors.]
+
+First, though, we have to actually turn patches into patch embeddings in code. That takes a little magic.
+
+### Patchify without the loops
+
+One way to extract patches is the obvious way: two nested `for` loops over `(i, j)` grid coordinates, slicing `x[:, :, i*P:(i+1)*P, j*P:(j+1)*P]` each time.
+
+This works, but it's the wrong way to do it. The loops ask the computer to cut out and copy the 256 patches one at a time, in plain Python. The hardware we run on — especially a GPU — is built to do thousands of small operations at the same time, but a Python loop forces them into single file: cut one patch, wait, cut the next, wait, and so on, with the hardware mostly idle in between. For 256 patches per image and many images per batch, that waiting adds up fast.
+
+Instead, we describe the exact same rearrangement as one bulk operation the hardware can do in a single parallel shot. We get all 256 patches at once with a single reshape → permute → reshape sequence:
+
+```python
+x1 = x.reshape(B, C, nh, P, nw, P)   # split H and W into (n_patches, patch_size)
+x2 = x1.permute(0, 2, 4, 1, 3, 5)    # reorder to (B, nh, nw, C, P, P)
+x3 = x2.reshape(B, nh*nw, C*P*P)     # flatten each patch into a vector
+```
+
+The permute is the step that's easy to get wrong. After the first reshape, the tensor is laid out as `(B, C, nh, P, nw, P)`, and the pixel values belonging to a single patch are scattered around — interleaved with values from other patches. The permute pulls the two patch indices `(nh, nw)` to the front and groups each patch's `(C, P, P)` pixels together, so the final reshape can flatten each patch cleanly into one contiguous vector. The result has shape `(B, 256, 3072)`, exactly what we wanted, and it's identical to what the loops would have produced — just much faster.
+
+[Figure — Patchify shape trace. A left-to-right diagram of patch extraction: four blue rounded boxes connected by arrows, each arrow carrying a small yellow tag naming the tensor operation. Box 1: "(B, C, H, W)" with caption "(B, 3, 512, 512) — input image batch". Arrow tagged "reshape" → Box 2: "(B, C, nh, P, nw, P)" caption "(B, 3, 16, 32, 16, 32) — split H, W into (num patches, patch size)". Arrow tagged "permute" → Box 3: "(B, nh, nw, C, P, P)" caption "(B, 16, 16, 3, 32, 32) — patch indices moved to front". Arrow tagged "reshape" → Box 4: "(B, N, C·P²)" caption "(B, 256, 3072) — N = 256 flattened patches, each a 3072-dim vector". Hand-drawn style. (Note: the third operation is a reshape, not a permute — correct the label if reusing the notebook version.)]
+
+Wrapped up as a function:
+
+```python
+def extract_flattened_patches(x: torch.Tensor, patch_size: int) -> torch.Tensor:
+    B, C, H, W = x.shape
+    P = patch_size
+    nh, nw = H // P, W // P
+    x = x.reshape(B, C, nh, P, nw, P)
+    x = x.permute(0, 2, 4, 1, 3, 5)
+    x = x.reshape(B, nh * nw, C * P * P)
+    return x
+```
+
+### Project to the model's dimension
+
+Each flattened patch is a 3072-long vector of raw pixel values, but the language model works in its own dimension — 2048 for Qwen3-1.7B, the LM we'll use. So the embedder does the simplest possible thing: normalize each patch with a LayerNorm, multiply it by a single learned matrix that maps 3072 → 2048, and normalize again. That one matrix is the entire "encoder." No attention, no stacked transformer layers — just patchify and a linear projection.
+
+```python
+self.ln1 = nn.LayerNorm(3072)          # normalize each flattened patch
+self.fc  = nn.Linear(3072, 2048)       # project pixel space → LM's hidden dim
+self.ln2 = nn.LayerNorm(2048)          # normalize after projection
+```
+
+### Add positional information to patch embeddings
+
+After patchification, every patch embedding only contains information about patch's pixel values — the model has no idea where in the image a patch came from. We need to inject that spatial information.
+
+[Figure — Adding Positional Information. Titled "Adding Positional Information". Three stacked horizontal vectors with operators between them, hand-drawn style with soft fills. Top: a blue bar showing "[0.3, -0.1, 0.8, ...]", labeled on the left "patch at pos. (4, 5):" and annotated on the right "← flattened patch embedding". Below it a large "+". Middle: a green bar showing "[0.1, 0.4, -0.2, ...]", labeled "positional embedding:" and annotated "← learned vector that encodes 'this patch is at position (4, 5)' (one such vector needed for each patch position)". Below it a large "=". Bottom: a red/pink bar showing "[0.4, 0.3, 0.6, ...]", labeled "result:" and annotated "← fed to the decoder / language model". The figure makes clear that positional info is simply added, element-wise, to each patch embedding.]
+
+The simplest approach: learn one embedding vector per patch position. For each position (𝑖,𝑗) in the 16×16 grid, you may store a learned vector of length D. This requires a table of shape `(16, 16, D)` — 256×D parameters, one independent vector per cell.
+
+A more parameter-efficient approach: factor the grid into separate row and column tables of shape `(16, D)` each, and define the positional embedding for patch (𝑖,𝑗) as the sum of the row and column entries:
+
+```
+pos(i, j) = E_row[i] + E_col[j]
+```
+
+With this approach, E_row[i] may learn to encode "this patch is at row i" and E_col[j] may learn to encode "this patch is at column j". E_row[i] + E_col[j] may encode "this patch is at row i and column j".
+
+With M=16, D=2048: 65,536 vs 524,288 parameters — 8× fewer. The tables also generalize to different image sizes by slicing `E_row[:nh]` and `E_col[:nw]`.
+
+[Figure — Full Table vs. Factorized Approach. Titled "Full Table vs. Factorized Approach", two side-by-side panels, hand-drawn style. LEFT panel, headed "Full table: (16, 16, 2048) — 16·16·2048 = 524,288 parameters": a 16×16 grid of small colored rounded squares (rows labeled "row 0 … row 15", columns "col 0 … col 15", with ellipses standing in for the middle rows/columns), with the caption "One independent 2048-dim vector for each of 16·16 = 256 positions". RIGHT panel, headed "Factorized: E_row (16, 2048) and E_col (16, 2048) — (16·2048) + (16·2048) = 65,536 parameters": two short columns of 16 rounded bars indexed 0..15 (a green column for E_row, a red column for E_col, ellipses in the middle), with a highlighted box at the bottom reading "pos_embed(i, j) = E_row[i] + E_col[j]" and subtitle "Factorized positional embedding for position (i, j)". The contrast between the dense 256-cell grid and the two slim 16-entry columns visually conveys the 8× parameter saving.]
+
+We choose the parameter-efficient approach to match the architecture of Gemma 4 12B. To build all 256 positional embeddings at once, we broadcast the row table against the column table and add them, then add the result to the patch embeddings and apply one final LayerNorm:
+
+```python
+row_emb = self.y_pos_emb[:, :nh, :]    # (1, nh, D)
+col_emb = self.x_pos_emb[:, :nw, :]    # (1, nw, D)
+pos = (row_emb.unsqueeze(2) + col_emb.unsqueeze(1)).reshape(1, nh * nw, -1)
+x = x + pos                            # add position to every patch
+x = self.ln3(x)                        # final LayerNorm
+```
+
+Putting it all together, the whole embedder is just: **patchify → LayerNorm → linear projection → LayerNorm → add positional embeddings → LayerNorm**. Compare that to a Vision Transformer's dozens of attention layers, and you can see where the parameter savings come from. Out goes a 550M-parameter encoder; in comes a single matrix plus two small position tables.
+
+[Figure — The Embedder Pipeline. A vertical six-step flowchart of the VisionEmbedder, hand-drawn style. Each step is a long rounded bar with a numbered colored circle on the left, the operation name, the shape transformation in the middle, and a short note on the right; arrows connect the bars top-to-bottom. (1) purple "Patchify": (B, C, H, W) → (B, N, C·P²), note "Split image into N flattened patch embeddings". (2) blue "LayerNorm": (B, N, C·P²) → (B, N, C·P²), note "Normalize each flattened patch independently". (3) green "Linear": (B, N, C·P²) → (B, N, D), note "Project each patch embedding to the output dimension". (4) blue "LayerNorm": (B, N, D) → (B, N, D), note "Normalize each projected patch independently". (5) pink "Add pos. embedding": (B, N, D) → (B, N, D), note "Inject into each patch embedding info about its position in the image". (6) blue "LayerNorm": (B, N, D) → (B, N, D), note "Final normalization". A legend along the bottom: "B = batch size, C = input channels, H/W = image height/width, P = patch size, N = number of patches, C·P² = flattened patch dimension, D = output embedding dimension".]
+
+## Mixing Images and Text
+
+Let's zoom out for a second. We want to feed an input image and input text into a language model. We've converted the image into a sequence of vectors with the same dimension as the token embeddings the LM already uses. So how do we mix the two?
+
+The idea is to reserve 256 slots in the token sequence using a special placeholder token `<|image|>`, then overwrite those slots with the real patch embeddings at forward-pass time.
+
+In code, the forward pass does three things:
+
+1. Build `input_ids` with 256 `<|image|>` tokens at the start of the user turn
+2. Transform the sequence of input tokens into a sequence of token embeddings using the decoder's embedding matrix
+3. Overwrite the embeddings of placeholder tokens with the projected patch embeddings from the vision embedder
+
+The sequence fed to the LM looks like:
+
+```
+<|image|>×256  What colour is the car?  → Blue.
+└────────────┘ └─────────────────────────────────┘
+  256 patch        text tokens
+  embeddings       (from the LM's embedding table)
+```
+
+One small piece sits between the embedder and step 3: the connector. The vision embedder already outputs 2048-dim vectors — exactly Qwen3's hidden size — so technically we could feed them straight in. But we still pass them through one more linear layer (2048 → 2048) to mirror Gemma 4 12B's architecture. It's a single matrix, about 4M parameters.
+
+The overwrite in step 3 is the heart of it, and it's a one-liner. We find every position holding an image token, then assign the patch embeddings into exactly those positions:
+
+```python
+mask = (input_ids == image_token_id)              # True at every <|image|> slot
+combined = token_embd.clone()
+combined[mask] = image_embd.reshape(-1, image_embd.shape[-1]).to(combined.dtype)
+```
+
+After this, the language model sees one flat sequence of vectors — image patches and text tokens side by side — and processes them with the same attention layers. There's no separate visual pathway at all.
+
+But there are some important nuances in getting that sequence built.
+
+Instruction-tuned LMs don't take raw text — they expect a specific format, with special tokens marking where each turn begins and ends. For each sample from the trainset, we create a list of `{"role": ..., "content": ...}` dicts. We prepend 256 copies of the string `"<|image|>"` to the first user message. We call `tokenizer.apply_chat_template(messages, tokenize=False)`, passing a list of `{"role": ..., "content": ...}` dicts. It combines the conversation into a single formatted string — with `<|im_start|>`, `<|im_end|>`, and other special tokens inserted in the right places.
+
+Then `tokenizer.encode(text)` converts that string to a list of token IDs. `input_ids` ends up with exactly 256 consecutive image token IDs at the start of the user turn — one slot per patch.
+
+```python
+def tokenize_sample(sample, tokenizer, vlm_cfg):
+    image_token = tokenizer.image_token   # the "<|image|>" string
+    messages = []
+    for i, turn in enumerate(sample["texts"]):
+        user_content = turn["user"]
+        if i == 0:   # prepend one image token per patch to the first user turn
+            user_content = image_token * vlm_cfg.vision.num_patches + user_content
+        messages.append({"role": "user",      "content": user_content})
+        messages.append({"role": "assistant", "content": turn["assistant"]})
+    text = tokenizer.apply_chat_template(messages, tokenize=False)
+    return tokenizer.encode(text)
+```
+
+> 💡 The image token is a string like `"<|image|>"`, not an int. Repeat the string 256 times and let the tokenizer convert it to IDs — `input_ids.count(image_token_id)` should then come out to exactly 256.
+> 
+
+## Packing samples into batches
+
+One practical thing before training: how do we batch these samples? They vary wildly in length — a one-line caption next to a long multi-turn conversation. If we padded every sample up to the maximum length, most of each batch would be padding, and the GPU would spend almost all its time on tokens that mean nothing. So instead we pack: concatenate several samples back-to-back into one fixed-length sequence (here 2048 tokens) until the next sample won't fit, then pad just once at the very end. A single packed sequence can hold several samples — and therefore several images, each carrying its own block of 256 image tokens. This is a big part of what keeps the whole run cheap enough to fit our $100 budget.
+
+[Figure — Knapsack Packing. Titled "Knapsack Packing", hand-drawn style. Top text: "Sample lengths (sorted): [800, 700, 500, 400]" and "Max knapsack length = 2048". Below, labeled "Knapsack 1:", a single fixed-width horizontal bar (representing the 2048 budget) filled left-to-right with three colored segments labeled by their length — blue "800", green "700", pink "500" — followed by a thin gray "PAD" sliver at the far right; a caption beneath reads "Total = 2000" and a green annotation at the top-right reads "97.6% full". Below that, labeled "Knapsack 2:", a same-width but mostly-empty dashed-outline bar containing a single yellow segment "400" at the left, with an orange note "(keep accumulating)". The figure conveys the strategy: sort samples longest-first, greedily drop each into the first knapsack it fits, and pad only once at the end.]
+
+## Actual training!!!
+
+We train with next-token prediction cross-entropy. Logit at position `t` predicts the token at `t+1`. Before computing the loss, two sets of positions are masked out: pad tokens (excluded via `ignore_index`) and image tokens (replaced with `-100` in the labels, so they fall under the same mask). In this way, we exclude from loss calculation the predicted distribution over any padding or image token.
+
+Why exclude image tokens? Because we only ever ask the model to predict the next *text* token. We never want it to predict "what the next image patch should look like," so those positions shouldn't contribute to the loss at all. Replacing their labels with `-100` tells PyTorch's cross-entropy to skip them:
+
+```
+Create a visualization of this table: 
+[ pos:          0    1    2    3    4    5    6
+input_ids:  IMG  IMG   42   87  EOS  PAD  PAD
+labels:      IMG   42   87  EOS  PAD  PAD       (labels = input_ids shifted by 1)
+after mask: -100   42   87  EOS  PAD  PAD
+              ×     ✓    ✓    ✓    ×    × ]
+```
+
+In code:
+
+```python
+logits = vlm(input_ids, image)
+labels = input_ids.clone()
+labels[labels == image_token_id]    = -100   # don't predict image tokens
+labels[labels == pad_token_id]      = -100   # don't predict padding
+shift_logits = logits[:, :-1, :]
+shift_labels = labels[:, 1:]
+loss = F.cross_entropy(
+    shift_logits.reshape(-1, shift_logits.size(-1)),
+    shift_labels.reshape(-1),
+    ignore_index=-100,
+)
+```
+
+We will train the model on FineVision dataset, which is "meticulously collected, curated, and unified corpus of 24 million samples" for training VLMs.
+
+Hugging Face datasets give you two options: download the whole thing to disk, or stream it. Streaming means samples are pulled from the Hub one at a time, on demand, as training proceeds — nothing is stored locally, so you can start training immediately without waiting for a giant download. Since FineVision has ~24 million samples, downloading it would mean pulling down roughly 5 TB of data. So if you want to train on all of FineVision, you almost certainly want to stream it. But that raises a problem: how do you build a validation set? You can't hold out every 10th sample, or the last 10%, because you never have the full dataset in front of you. My approach was to save every 10th example *seen so far* for validation — which means the validation set grows steadily as training goes on. There are probably better approaches.
+
+## Has our model learned anything useful?
+
+After training, we decided to read the responses our model generates, and found that most are of this quality:
+
+[Example: paste a representative early, low-quality generation from the SmolLM-135M model here.]
+
+Hmm, what do we do now?
+
+In the beginning, we mentioned that the encoder-free approach makes sense if the decoder is powerful enough. Maybe the SmolLM with 135M params isn't big enough? Let's try to replace it with SmolLM-360M.
+
+After 8 hours of training, I generated the model's responses to several images. "2D image with black background" 😭😭😭.
+
+After two unsuccessful attempts, I decided to explore FineVision and discovered that it contains many "advanced" samples, like questions about chemical diagrams or images of LATEX text. I thought this might be too much for a model that is only learning "to see", so tried to find subsets of FineVision with simpler samples.
+
+I also scaled up the decoder to Qwen 3 1.7B. I tried to train the model using Qwen 3 1.7B on different subsets of FineVision, and you can see the validation and train loss curves here.
+
+[Loss curves for model with Qwen 3 1.7B]
+
+These validation curves should be read in isolation, because each model is trained and validated on different data. In every run we hold out every 10th sample of the training set for validation.
+
+The model overfitted smaller subsets, like llava-150K, or even combinations of small subsets, like [subset] + [subset] + [subset]. We got good performance only on densefusion + [subset], which together contained [X] samples.
+
+Finally, we have a model that can say something sensible about images!
