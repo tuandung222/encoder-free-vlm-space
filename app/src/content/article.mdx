@@ -59,7 +59,8 @@ But, if models with encoders work well, why would we want to throw the encoders 
 It does. Two things in particular:
 
 1. Easier to fine-tune. With encoders, you usually freeze them and train only the language model, which means the encoders never improve, and you have to keep the separate parts working together.. There's only one model now, so when you train it, everything updates at once.
-2. Lower latency. The language model must wait until the image is processed by the encoder or the embedder. Since the embedder is much smaller, language model's wait time is much lower, which leads to overall lower latency of a forward pass.
+2. Lower latency. The language model must wait until the image is processed by the encoder or the embedder. Since the embedder is much smaller, language model's wait time is much lower, which leads to overall lower latency of a forward pass. 
+   For example, on an H100, a forward pass through an embedder is roughly 50 times faster than a forward pass through a SigLIP vision encoder.
 
 Now that we've learned that encoder-free models are cool, let's build one. Specifically, we'll build a model that takes an image and text as input. We skip audio and video. Handling them would make the post much longer, and the image case illustrates the key ideas on its own 🙂.
 We will train the model on a single H100 for 40–50 hours. Renting an H100 costs about \$2 per hour, so the total cost of the run is about \$100.
@@ -287,7 +288,8 @@ The model overfit the smaller subsets, like LLaVA_Instruct_150K, and even combin
 
 ## Results
 
-We trained our model on densefusion + sharegpt4v for 43 hours, and finally, we have a model that can say something sensible about images!
+We trained our model on densefusion + sharegpt4v for 43 hours at a cost of about $100, and finally, we have a model that can say something sensible about images!
+
 Here, we take this model and ask it to describe a handful of images it hasn't seen during training. Most of its answers are now grounded in what's actually in the photo, though far from perfect (for example, it can mistake a cat for a dog).
 
 <Image src={responseSki} alt="The model's response to a photo of people on a ski slope" caption="" />
@@ -302,9 +304,8 @@ Here, we take this model and ask it to describe a handful of images it hasn't se
 
 
 ## Thank you!
-Thank you for exploring encoder-free VLMs with us!
-
-Feedback is greatly appreciated - please share it in the community section of the blog!
+Thank you for exploring encoder-free VLMs with us! Feedback is greatly appreciated - please share it in the community section of the blog. 
+If you want to learn more about VLMs, definitely check out [Vision Language Models: Building VLMs with Hugging Face](https://vlmbook.com)
 
 
 ## Reference list
