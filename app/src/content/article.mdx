@@ -1,6 +1,6 @@
 ---
-title: "Train Your Own Encoder-Free VLM in $100"
-description: "Why Gemma 4's encoder-free architecture is very cool and how to train your own encoder-free VLM."
+title: "Tự huấn luyện Mô hình Ngôn ngữ Thị giác không dùng Bộ mã hóa (Encoder-Free VLM) của riêng bạn với 100$"
+description: "Tại sao kiến trúc không dùng bộ mã hóa (encoder-free) của Gemma 4 lại rất thú vị và cách tự huấn luyện VLM không dùng bộ mã hóa (encoder-free) của riêng bạn."
 authors:
   - name: "Nazar Drugov"
     url: "https://huggingface.co/ndrugov"
@@ -22,7 +22,7 @@ tags:
 showPdf: true
 tableOfContentsAutoCollapse: true
 licence: >
-  Text and diagrams are licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC-BY 4.0</a>.
+  Văn bản và biểu đồ được cấp phép dưới dạng <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC-BY 4.0</a>.
 ---
 
 import HtmlEmbed from "../components/HtmlEmbed.astro";
@@ -36,84 +36,84 @@ import responseTree from "./assets/image/response_to_tree.jpeg";
 import responseDome from "./assets/image/response_to_dome.jpeg";
 import responseCat2 from "./assets/image/response_to_cat_2.jpeg";
 
-Google DeepMind latest Gemma 4 is an encoder-free multimodal model. In this blog, we'll find out why it's cool, and then we'll train our own for under $100!
+Gemma 4 mới nhất của Google DeepMind là một mô hình đa phương thức (multimodal) không dùng bộ mã hóa (encoder-free). Trong bài viết này, chúng ta sẽ tìm hiểu lý do tại sao nó lại thú vị, và sau đó chúng ta sẽ tự huấn luyện một mô hình của riêng mình với chi phí dưới 100$!
 
-## Classical Multimodal Models
+## Các mô hình đa phương thức cổ điển
 
-A model that takes images, audio, and text as input and generates text as output typically consists of three transformers stitched together.
+Một mô hình nhận hình ảnh, âm thanh và văn bản làm đầu vào và tạo ra văn bản làm đầu ra thường bao gồm ba transformer được ghép nối với nhau.
 
-<HtmlEmbed src="d3-multimodal-stack.html" title="A classical multimodal model: separate encoders feed one language model" />
+<HtmlEmbed src="d3-multimodal-stack.html" title="Một mô hình đa phương thức cổ điển: các bộ mã hóa riêng biệt cung cấp dữ liệu cho một mô hình ngôn ngữ" />
 
-The vision encoder is usually a Vision Transformer. It takes the raw image, splits it into patches, converts each patch into a vector, and runs many attention layers over them to produce a sequence of embeddings rich with visual meaning. It was pretrained on hundreds of millions of image–text pairs, so it already "knows" a lot about the visual world. Similarly, the audio encoder turns a raw waveform into a sequence of vectors called audio embeddings, again using a stack of attention layers. After a sequence of embeddings leaves an encoder, each embedding in that sequence gets multiplied with a matrix called connector to project it to the dimension the language model expects.
+Bộ mã hóa thị giác thường là một Vision Transformer. Nó nhận hình ảnh thô, cắt mảnh ảnh (patchify) thành các mảnh (patch), chuyển đổi mỗi mảnh thành một vectơ và chạy nhiều lớp attention trên chúng để tạo ra một chuỗi các embedding giàu ý nghĩa thị giác. Nó đã được huấn luyện trước trên hàng trăm triệu cặp hình ảnh–văn bản, vì vậy nó đã "hiểu" rất nhiều về thế giới trực quan. Tương tự như vậy, bộ mã hóa âm thanh chuyển đổi dạng sóng thô thành một chuỗi các vectơ gọi là embedding âm thanh, cũng sử dụng một chồng các lớp attention. Sau khi một chuỗi các embedding rời khỏi bộ mã hóa, mỗi embedding trong chuỗi đó sẽ được nhân với một ma trận được gọi là bộ kết nối (connector) để chiếu nó lên chiều kích thước mà mô hình ngôn ngữ mong đợi.
 
-## Are Encoders Really Necessary?
+## Bộ mã hóa có thực sự cần thiết?
 
-Have you ever wondered whether the encoders are absolutely necessary? Someone at DeepMind did, and they found the answer is no.
-Here is one intuitive way to think about this: the encoder's job is to turn pixels into vectors that the language model can make sense of. If the language model is powerful enough, and has seen enough image-text data during training, maybe it doesn't need those vectors pre-chewed. Maybe it can extract the visual meaning itself. So the vision encoder gets replaced from a large transformer with a thing called embedder. Here is the visualization of embedder in Gemma 4 12B compared to a vision encoder.
+Bạn đã bao giờ tự hỏi liệu các bộ mã hóa có hoàn toàn cần thiết hay không? Một người nào đó tại DeepMind đã tự hỏi điều này, và họ nhận ra câu trả lời là không.
+Dưới đây là một cách trực quan để nghĩ về điều này: công việc của bộ mã hóa là biến các điểm ảnh (pixel) thành các vectơ mà mô hình ngôn ngữ có thể hiểu được. Nếu mô hình ngôn ngữ đủ mạnh và đã thấy đủ dữ liệu hình ảnh-văn bản trong quá trình huấn luyện, có lẽ nó không cần những vectơ đã được "nhai sẵn" đó. Có lẽ bản thân nó có thể tự trích xuất ý nghĩa thị giác. Do đó, bộ mã hóa thị giác được thay thế từ một transformer lớn bằng một thứ gọi là bộ nhúng (embedder). Dưới đây là hình ảnh trực quan hóa bộ nhúng (embedder) trong Gemma 4 12B so với một bộ mã hóa thị giác.
 
-<HtmlEmbed src="d3-architecture-comparison.html" title="The embedder vs. a vision encoder" desc="The embedder illustration was inspired by the work of Maarten Grootendorst; the encoder illustration was inspired by An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale (Dosovitskiy et al., 2020)." wide />
+<HtmlEmbed src="d3-architecture-comparison.html" title="Bộ nhúng (embedder) so với bộ mã hóa thị giác" desc="Hình minh họa bộ nhúng (embedder) được lấy cảm hứng từ công trình của Maarten Grootendorst; hình minh họa bộ mã hóa được lấy cảm hứng từ bài báo An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale (Dosovitskiy et al., 2020)." wide />
 
-The audio encoder gets cut even more - raw amplitude samples go straight through one linear projection.
-But, if models with encoders work well, why would we want to throw the encoders away? Does being encoder-free offer any advantages?
+Bộ mã hóa âm thanh thậm chí còn được tinh giản nhiều hơn - các mẫu biên độ thô đi thẳng qua một phép chiếu tuyến tính (linear projection).
+Nhưng, nếu các mô hình có bộ mã hóa hoạt động tốt, tại sao chúng ta lại muốn loại bỏ các bộ mã hóa? Việc không dùng bộ mã hóa (encoder-free) có mang lại lợi thế nào không?
 
-It does. Two things in particular:
+Có chứ. Cụ thể là hai điểm sau:
 
-1. Easier to fine-tune. With encoders, you usually freeze them and train only the language model, which means the encoders never improve, and you have to keep the separate parts working together.. There's only one model now, so when you train it, everything updates at once.
-2. Lower latency. The language model must wait until the image is processed by the encoder or the embedder. Since the embedder is much smaller, language model's wait time is much lower, which leads to overall lower latency of a forward pass. 
-   For example, on an H100, a forward pass through an embedder is roughly 50 times faster than a forward pass through a SigLIP vision encoder.
+1. Dễ tinh chỉnh (fine-tune) hơn. Với các bộ mã hóa, bạn thường đóng băng chúng và chỉ huấn luyện mô hình ngôn ngữ, điều này có nghĩa là các bộ mã hóa không bao giờ được cải thiện và bạn phải duy trì sự phối hợp giữa các phần riêng biệt. Giờ đây chỉ có một mô hình duy nhất, vì vậy khi bạn huấn luyện nó, mọi thứ sẽ được cập nhật cùng một lúc.
+2. Độ trễ thấp hơn. Mô hình ngôn ngữ phải đợi cho đến khi hình ảnh được xử lý bởi bộ mã hóa hoặc bộ nhúng (embedder). Vì bộ nhúng (embedder) nhỏ hơn nhiều, thời gian chờ của mô hình ngôn ngữ thấp hơn nhiều, dẫn đến độ trễ tổng thể của một lượt lan truyền xuôi (forward pass) thấp hơn. 
+   Ví dụ, trên H100, một lượt lan truyền xuôi qua bộ nhúng (embedder) nhanh hơn khoảng 50 lần so với lượt lan truyền xuôi qua bộ mã hóa thị giác SigLIP.
 
-Now that we've learned that encoder-free models are cool, let's build one. Specifically, we'll build a model that takes an image and text as input. We skip audio and video. Handling them would make the post much longer, and the image case illustrates the key ideas on its own 🙂.
-We will train the model on a single H100 for 40–50 hours. Renting an H100 costs about \$2 per hour, so the total cost of the run is about \$100.
+Bây giờ chúng ta đã biết rằng các mô hình không dùng bộ mã hóa (encoder-free) rất thú vị, hãy cùng xây dựng một mô hình như vậy. Cụ thể, chúng ta sẽ xây dựng một mô hình nhận hình ảnh và văn bản làm đầu vào. Chúng ta sẽ bỏ qua âm thanh và video. Việc xử lý chúng sẽ làm bài viết dài hơn rất nhiều, và trường hợp hình ảnh tự nó đã minh họa được các ý tưởng chính rồi 🙂.
+Chúng ta sẽ huấn luyện mô hình trên một GPU H100 duy nhất trong 40–50 giờ. Thuê một GPU H100 tốn khoảng \$2 mỗi giờ, vì vậy tổng chi phí chạy huấn luyện là khoảng \$100.
 
-## The Goal
+## Mục tiêu
 
-To summarize: we want a model that takes in an image and a question about that image, and outputs text that accurately answers the question. And, because we're fancy, we want to do it without a large pretrained transformer encoder.
+Tóm lại: chúng ta muốn một mô hình nhận vào một hình ảnh và một câu hỏi về hình ảnh đó, sau đó xuất ra văn bản trả lời chính xác câu hỏi. Và, bởi vì chúng ta thích sự xịn sò, chúng ta muốn thực hiện việc này mà không cần một bộ mã hóa transformer lớn được huấn luyện trước.
 
-Hmm, where do we start?
+Hừm, chúng ta bắt đầu từ đâu đây?
 
-We need to find a way to feed images into the language model.
+Chúng ta cần tìm cách đưa hình ảnh vào mô hình ngôn ngữ.
 
-## Building the Embedder
+## Xây dựng Bộ nhúng (Embedder)
 
-What we have is an image. What we want is a sequence of vectors that (a) carry information about that image and (b) have the right dimension to be fed into the language model alongside text token embeddings.
+Những gì chúng ta có là một hình ảnh. Những gì chúng ta muốn là một chuỗi các vectơ (a) mang thông tin về hình ảnh đó và (b) có kích thước phù hợp để đưa vào mô hình ngôn ngữ cùng với các embedding token văn bản (text token embedding).
 
-The idea is to divide the image into square patches and convert each patch into a vector: a patch embedding. This is tricky to implement if we want to fully process images of different sizes. So instead we will standardize every image to the same shape first: resize the shorter side to 512 pixels (keeping the aspect ratio, which upscales the image if it's smaller than that), then crop out the central 512×512 square. In code this is three lines:
+Ý tưởng là chia hình ảnh thành các mảnh (patch) hình vuông và chuyển đổi mỗi mảnh thành một vectơ: một bản nhúng mảnh (patch embedding). Điều này rất phức tạp để triển khai nếu chúng ta muốn xử lý đầy đủ các hình ảnh có kích thước khác nhau. Vì vậy, thay vào đó, trước tiên chúng ta sẽ chuẩn hóa mọi hình ảnh về cùng một hình dạng: thay đổi kích thước cạnh ngắn hơn thành 512 pixel (giữ nguyên tỷ lệ khung hình, điều này sẽ phóng to hình ảnh nếu nó nhỏ hơn kích thước đó), sau đó cắt ra hình vuông 512×512 ở trung tâm. Trong mã nguồn, việc này chỉ tốn ba dòng:
 
 ```python
 transform = transforms.Compose([
-    transforms.Resize(512),        # resize shorter side to 512 (upscales small images)
-    transforms.CenterCrop(512),    # crop to exactly 512×512
-    transforms.ToTensor(),         # H×W×C uint8 → C×H×W float in [0, 1]
+    transforms.Resize(512),        # thay đổi kích thước cạnh ngắn hơn thành 512 (phóng to ảnh nhỏ)
+    transforms.CenterCrop(512),    # cắt chính giữa kích thước 512×512
+    transforms.ToTensor(),         # H×W×C uint8 → C×H×W float trong khoảng [0, 1]
 ])
 ```
 
-So, if you input a tiny image, it gets scaled up until its shorter side is 512, then center-cropped. Every image, big or small, comes out as a 512×512×3 tensor of pixel values in [0, 1].
+Vì vậy, nếu bạn đưa vào một hình ảnh nhỏ bé, nó sẽ được phóng to cho đến khi cạnh ngắn hơn của nó là 512, sau đó được cắt ở giữa. Mọi hình ảnh, dù lớn hay nhỏ, đều trở thành một tensor 512×512×3 chứa các giá trị pixel trong khoảng [0, 1].
 
-<HtmlEmbed src="d3-resize-crop.html" title="Standardizing any image to 512×512" desc="Resize the shorter side to 512, then crop out the central 512×512 square." />
+<HtmlEmbed src="d3-resize-crop.html" title="Chuẩn hóa bất kỳ hình ảnh nào về kích thước 512×512" desc="Thay đổi kích thước cạnh ngắn hơn thành 512, sau đó cắt ra hình vuông 512×512 ở trung tâm." />
 
-Now we divide that 512×512 image into 32×32 patches. That creates a 16×16 grid of patches. If we flatten a patch, we get a vector of length 3×32×32 = 3072 (images are RGB). We have 16 × 16 = 256 such vectors.
+Bây giờ chúng ta chia hình ảnh 512×512 đó thành các mảnh (patch) kích thước 32×32. Điều này tạo ra một lưới các mảnh kích thước 16×16. Nếu chúng ta trải phẳng (flatten) một mảnh, chúng ta sẽ thu được một vectơ có độ dài 3×32×32 = 3072 (hình ảnh ở định dạng RGB). Chúng ta có 16 × 16 = 256 vectơ như vậy.
 
-The patches start in a 2D arrangement, but the language model takes a 1D sequence as input. So we have to flatten the grid into a list. What's the right order to put the patch embeddings in? The order doesn't really matter because the transformer's attention is permutation-equivariant. What matters is that each patch embedding contains information about its original 2D position in the grid of patches.
+Các mảnh ban đầu được sắp xếp theo dạng 2D, nhưng mô hình ngôn ngữ nhận một chuỗi 1D làm đầu vào. Vì vậy, chúng ta phải trải phẳng lưới này thành một danh sách. Thứ tự đúng để sắp xếp các bản nhúng mảnh (patch embedding) là gì? Thứ tự thực ra không quan trọng vì cơ chế chú ý (attention) của transformer có tính chất hoán vị tương biến (permutation-equivariant). Điều quan trọng là mỗi bản nhúng mảnh phải chứa thông tin về vị trí 2D ban đầu của nó trong lưới các mảnh.
 
-<HtmlEmbed src="d3-patch-grid-unroll.html" title="Unrolling the 16×16 patch grid into a flat sequence of 256 vectors" desc="Each patch is a 32×32-pixel region of the image, not a single pixel. Hover any patch to see where it lands in the flat sequence." wide />
+<HtmlEmbed src="d3-patch-grid-unroll.html" title="Trải phẳng lưới mảnh 16×16 thành một chuỗi phẳng gồm 256 vectơ" desc="Mỗi mảnh là một vùng 32×32 pixel của hình ảnh, không phải là một pixel đơn lẻ. Di chuột qua bất kỳ mảnh nào để xem vị trí của nó trong chuỗi phẳng." wide />
 
-First, though, we have to actually turn patches into patch embeddings in code. That takes a little PyTorch magic.
+Tuy nhiên, trước tiên chúng ta phải thực sự chuyển các mảnh thành các bản nhúng mảnh (patch embedding) trong mã nguồn. Việc này cần một chút thuật toán PyTorch.
 
-### Patchify without the loops
+### Phân mảnh ảnh (Patchify) không dùng vòng lặp
 
-One way to extract patches is to use two nested `for` loops over `(i, j)` grid coordinates, slicing `x[:, :, i*P:(i+1)*P, j*P:(j+1)*P]` each time.
+Một cách để trích xuất các mảnh là sử dụng hai vòng lặp `for` lồng nhau trên các tọa độ lưới `(i, j)`, thực hiện cắt lát `x[:, :, i*P:(i+1)*P, j*P:(j+1)*P]` mỗi lần.
 
-This works, but it's not the best way to do it. Since we're using a GPU, we want a single parallelizable operation instead of a loop. We get all 256 patches at once with a single reshape → permute → reshape sequence:
+Cách này hoạt động được, nhưng không phải là cách tốt nhất. Vì chúng ta đang sử dụng GPU, chúng ta muốn một thao tác song song hóa duy nhất thay vì một vòng lặp. Chúng ta thu được tất cả 256 mảnh cùng một lúc bằng một chuỗi biến đổi hình dạng duy nhất: thay đổi hình dạng (reshape) → hoán vị chiều (permute) → thay đổi hình dạng (reshape):
 
 ```python
-x1 = x.reshape(B, C, nh, P, nw, P)   # split H and W into (n_patches, patch_size)
-x2 = x1.permute(0, 2, 4, 1, 3, 5)    # reorder to (B, nh, nw, C, P, P)
-x3 = x2.reshape(B, nh*nw, C*P*P)     # flatten each patch into a vector
+x1 = x.reshape(B, C, nh, P, nw, P)   # chia H và W thành (n_patches, patch_size)
+x2 = x1.permute(0, 2, 4, 1, 3, 5)    # sắp xếp lại thứ tự thành (B, nh, nw, C, P, P)
+x3 = x2.reshape(B, nh*nw, C*P*P)     # trải phẳng mỗi mảnh thành một vectơ
 ```
 
-<HtmlEmbed src="d3-patchify-shapes.html" title="Patchify: the reshape → permute → reshape shape trace" wide />
+<HtmlEmbed src="d3-patchify-shapes.html" title="Phân mảnh ảnh (Patchify): theo dõi sự thay đổi kích thước qua reshape → permute → reshape" wide />
 
-Wrapped up as a function:
+Đóng gói lại thành một hàm:
 
 ```python
 def extract_flattened_patches(x: torch.Tensor, patch_size: int) -> torch.Tensor:
@@ -126,91 +126,91 @@ def extract_flattened_patches(x: torch.Tensor, patch_size: int) -> torch.Tensor:
     return x
 ```
 
-### Project to the model's dimension
+### Chiếu lên số chiều của mô hình
 
-We unrolled the 16×16 patch grid into a flat sequence of 256 flattened patches, each of which is a 3072-long vector. We want to feed this sequence of 256 flattened patches into the language model together with text tokens. But the language model takes as input only vectors of size that we will denote hidden_size. So, the embedder in Gemma 4 12B normalizes each flattened patch with a LayerNorm, multiplies it by a single learned matrix that maps 3072 → hidden_size, and normalizes again.
+Chúng ta đã làm phẳng tuần tự (unrolled) lưới mảnh 16×16 thành một chuỗi phẳng gồm 256 mảnh đã trải phẳng, mỗi mảnh là một vectơ dài 3072 chiều. Chúng ta muốn đưa chuỗi 256 mảnh đã trải phẳng này vào mô hình ngôn ngữ cùng với các token văn bản (text token). Nhưng mô hình ngôn ngữ chỉ nhận đầu vào là các vectơ có kích thước mà chúng ta sẽ ký hiệu là hidden_size. Vì vậy, bộ nhúng (embedder) trong Gemma 4 12B chuẩn hóa mỗi mảnh đã trải phẳng bằng một lớp LayerNorm, nhân nó với một ma trận có thể học duy nhất giúp ánh xạ từ 3072 → hidden_size, và chuẩn hóa lại một lần nữa.
 
 ```python
-self.ln1 = nn.LayerNorm(3072)           # normalize each flattened patch
-self.fc  = nn.Linear(3072, hidden_size) # project pixel space → LM's hidden dim
-self.ln2 = nn.LayerNorm(hidden_size)    # normalize after projection
+self.ln1 = nn.LayerNorm(3072)           # chuẩn hóa từng mảnh đã trải phẳng
+self.fc  = nn.Linear(3072, hidden_size) # chiếu không gian pixel → số chiều ẩn của LM
+self.ln2 = nn.LayerNorm(hidden_size)    # chuẩn hóa sau khi chiếu
 ```
 
-### Add positional information to patch embeddings
+### Thêm thông tin vị trí vào các bản nhúng mảnh
 
-After these steps, every patch embedding only contains information about patch's pixel values. It doesn't have information about where in the image a flattened patch came from. We need to inject that spatial information.
+Sau các bước này, mỗi bản nhúng mảnh chỉ chứa thông tin về các giá trị pixel của mảnh đó. Nó không có thông tin về vị trí mà mảnh đã trải phẳng đó xuất phát từ đâu trong hình ảnh. Chúng ta cần đưa thông tin không gian đó vào.
 
-<HtmlEmbed src="d3-positional-add.html" title="Adding Positional Information" desc="Positional information is simply added, element-wise, to each patch embedding." />
+<HtmlEmbed src="d3-positional-add.html" title="Thêm thông tin vị trí" desc="Thông tin vị trí chỉ đơn giản được cộng vào từng phần tử tương ứng của mỗi bản nhúng mảnh." />
 
-The simplest approach: learn one embedding vector per patch position. For each position (𝑖,𝑗) in the 16×16 grid, you may store a learned vector of length D. This requires a table of shape (16, 16, D): 256×D parameters, one independent vector per cell.
+Cách tiếp cận đơn giản nhất: học một vectơ nhúng cho mỗi vị trí mảnh. Đối với mỗi vị trí (i, j) trong lưới 16×16, bạn có thể lưu trữ một vectơ học được có độ dài D. Điều này yêu cầu một bảng có dạng (16, 16, D): 256×D tham số, một vectơ độc lập cho mỗi ô.
 
-A more parameter-efficient approach: factor the grid into separate row and column tables of shape (16, D) each, and define the positional embedding for patch (𝑖,𝑗) as the sum of the row and column entries:
+Một cách tiếp cận hiệu quả hơn về mặt tham số: phân tách lưới thành các bảng hàng và cột riêng biệt có dạng (16, D) cho mỗi bảng, và xác định bản nhúng vị trí cho mảnh (i, j) là tổng của các mục hàng và cột tương ứng:
 
 ```
 pos(i, j) = E_row[i] + E_col[j]
 ```
 
-With this approach, E_row[i] may learn to encode "this patch is at row i" and E_col[j] may learn to encode "this patch is at column j". E_row[i] + E_col[j] may encode "this patch is at row i and column j".
+Với phương pháp này, E_row[i] có thể học cách mã hóa thông tin "mảnh này nằm ở hàng i" và E_col[j] có thể học cách mã hóa "mảnh này nằm ở cột j". E_row[i] + E_col[j] sẽ mã hóa "mảnh này nằm ở hàng i và cột j".
 
-With M=16, the factorized tables use 2·16·hidden_size = 32·hidden_size parameters instead of 16·16·hidden_size = 256·hidden_size for the full table, 8× fewer. 
+Với M=16, các bảng đã phân tách sử dụng 2·16·hidden_size = 32·hidden_size tham số thay vì 16·16·hidden_size = 256·hidden_size cho bảng đầy đủ, giúp giảm đi 8 lần. 
 
-<HtmlEmbed src="d3-positional-tables.html" title="Full Table vs. Factorized Approach" desc="The factorized row + column tables use 32·hidden_size parameters instead of 256·hidden_size, an 8× saving." />
+<HtmlEmbed src="d3-positional-tables.html" title="Bảng đầy đủ so với cách tiếp cận phân tách" desc="Các bảng hàng + cột đã phân tách sử dụng 32·hidden_size tham số thay vì 256·hidden_size, tiết kiệm gấp 8 lần." />
 
-We use the parameter-efficient approach so our architecture matches Gemma 4 12B. Instead of learning a separate embedding for each of the 256 grid positions, we learn just one embedding per row and one per column. Each patch's positional embedding is then the sum of its row embedding and its column embedding. We build all 256 positional embeddings in one step using broadcasting.
+Chúng ta sử dụng phương pháp tiết kiệm tham số này để kiến trúc của chúng ta khớp với Gemma 4 12B. Thay vì học một bản nhúng riêng biệt cho mỗi vị trí trong số 256 vị trí lưới, chúng ta chỉ học một bản nhúng cho mỗi hàng và một bản nhúng cho mỗi cột. Bản nhúng vị trí của mỗi mảnh sau đó sẽ là tổng của bản nhúng hàng và bản nhúng cột của nó. Chúng ta xây dựng tất cả 256 bản nhúng vị trí trong một bước duy nhất bằng cách tận dụng cơ chế phát thanh (broadcasting).
 
 ```python
 row_emb = self.y_pos_emb[:, :nh, :]    # (1, nh, D)
 col_emb = self.x_pos_emb[:, :nw, :]    # (1, nw, D)
 pos = (row_emb.unsqueeze(2) + col_emb.unsqueeze(1)).reshape(1, nh * nw, -1)
-x = x + pos                            # add position to every patch
-x = self.ln3(x)                        # final LayerNorm
+x = x + pos                            # cộng thông tin vị trí vào từng mảnh
+x = self.ln3(x)                        # LayerNorm cuối cùng
 ```
 
-Putting it all together, the whole embedder is just: **patchify → LayerNorm → linear projection → LayerNorm → add positional embeddings → LayerNorm**.
+Tóm lại, toàn bộ bộ nhúng (embedder) chỉ đơn giản là: **phân mảnh ảnh (patchify) → LayerNorm → chiếu tuyến tính (linear projection) → LayerNorm → cộng bản nhúng vị trí → LayerNorm**.
 
-<HtmlEmbed src="d3-embedder-pipeline.html" title="The Embedder Pipeline" wide />
+<HtmlEmbed src="d3-embedder-pipeline.html" title="Luồng xử lý của bộ nhúng (Embedder Pipeline)" wide />
 
-## Mixing Images and Text
+## Trộn lẫn Hình ảnh và Văn bản
 
-Let's zoom out for a second. We want to feed an input image and input text into a language model. We've converted the image into a sequence of vectors with the same dimension as the token embeddings the LM already uses. So how do we mix the two?
+Hãy tạm lùi lại một bước để quan sát bức tranh toàn cảnh. Chúng ta muốn đưa một hình ảnh đầu vào và một văn bản đầu vào vào một mô hình ngôn ngữ. Chúng ta đã chuyển đổi hình ảnh thành một chuỗi các vectơ có cùng số chiều với bản nhúng mã báo (token embedding) mà LM đang sử dụng. Vậy làm thế nào để chúng ta trộn hai thành phần này lại với nhau?
 
-The idea is to reserve 256 slots in the token sequence using a special placeholder token `<|image|>`, then overwrite those slots with the real patch embeddings at forward-pass time.
+Ý tưởng là dự trữ 256 vị trí trong chuỗi mã báo (token) bằng cách sử dụng một mã báo giữ chỗ đặc biệt `<|image|>`, sau đó ghi đè các vị trí đó bằng các bản nhúng mảnh thực tế tại thời điểm thực hiện lượt lan truyền xuôi (forward pass).
 
-In code, the forward pass does three things:
+Trong mã nguồn, lượt lan truyền xuôi thực hiện ba việc:
 
-1. Build `input_ids` with 256 `<|image|>` tokens at the start of the user turn
-2. Transform the sequence of input tokens into a sequence of token embeddings using the decoder's embedding matrix
-3. Overwrite the embeddings of placeholder tokens with the projected patch embeddings from the vision embedder
+1. Xây dựng `input_ids` với 256 mã báo `<|image|>` ở đầu lượt của người dùng
+2. Chuyển đổi chuỗi các mã báo đầu vào thành một chuỗi các bản nhúng mã báo bằng cách sử dụng ma trận nhúng của bộ giải mã (decoder)
+3. Ghi đè các bản nhúng của các mã báo giữ chỗ bằng các bản nhúng mảnh đã được chiếu từ bộ nhúng thị giác (vision embedder)
 
-The sequence fed to the LM looks like:
+Chuỗi dữ liệu được đưa vào LM trông như thế này:
 
-<HtmlEmbed src="d3-image-text-sequence.html" title="The sequence fed to the language model" desc="256 placeholder image slots, then the text tokens, then the generated answer, all one flat sequence." />
+<HtmlEmbed src="d3-image-text-sequence.html" title="Chuỗi được đưa vào mô hình ngôn ngữ" desc="256 vị trí giữ chỗ cho hình ảnh, tiếp theo là các token văn bản, sau đó là câu trả lời được tạo ra, tất cả tạo thành một chuỗi phẳng duy nhất." />
 
-Between the embedder and step 3, there is also the connector. The vision embedder already outputs hidden_size-dim vectors, exactly the decoder's hidden size, so technically we could feed them straight in. But we still pass them through one more linear layer (hidden_size → hidden_size) to mirror Gemma 4 12B's architecture.
+Giữa bộ nhúng (embedder) và bước 3 còn có bộ kết nối (connector). Bộ nhúng thị giác (vision embedder) đã xuất ra các vectơ có số chiều ẩn hidden_size, khớp chính xác với kích thước ẩn của bộ giải mã (decoder), do đó về mặt kỹ thuật chúng ta có thể đưa chúng trực tiếp vào. Tuy nhiên, chúng ta vẫn chuyển chúng qua thêm một lớp tuyến tính nữa (hidden_size → hidden_size) để mô phỏng chính xác kiến trúc của Gemma 4 12B.
 
-We find every position holding an image token, then assign the patch embeddings into exactly those positions:
+Chúng ta tìm mọi vị trí chứa token hình ảnh, sau đó gán các embedding mảnh vào chính xác các vị trí đó:
 
 ```python
-mask = (input_ids == image_token_id)              # True at every <|image|> slot
+mask = (input_ids == image_token_id)              # True tại mọi vị trí giữ chỗ <|image|>
 combined = token_embd.clone()
 combined[mask] = image_embd.reshape(-1, image_embd.shape[-1]).to(combined.dtype)
 ```
 
-After this, the language model sees one flat sequence of vectors, image patches and text tokens side by side, and processes them with the same attention layers. 
+Sau bước này, mô hình ngôn ngữ sẽ nhìn thấy một chuỗi phẳng các vectơ gồm các mảnh ảnh và các token văn bản nằm cạnh nhau, và xử lý chúng bằng các lớp attention giống hệt nhau. 
 
-But there are some important nuances in getting that sequence built.
+Nhưng có một số sắc thái quan trọng trong việc xây dựng chuỗi đó.
 
-Instruction-tuned LMs don't take raw text: they expect a specific format, with special tokens marking where each turn begins and ends. For each sample from the trainset, we create a list of `{"role": ..., "content": ...}` dicts. We prepend 256 copies of the string `"<|image|>"` to the first user message. We call `tokenizer.apply_chat_template(messages, tokenize=False)`, passing a list of `{"role": ..., "content": ...}` dicts. It combines the conversation into a single formatted string, with `<|im_start|>`, `<|im_end|>`, and other special tokens inserted in the right places.
+Các LM được tinh chỉnh theo chỉ dẫn (instruction-tuned LM) không nhận văn bản thô: chúng mong đợi một định dạng cụ thể, với các mã báo đặc biệt đánh dấu nơi mỗi lượt bắt đầu và kết thúc. Đối với mỗi mẫu từ tập huấn luyện (trainset), chúng ta tạo một danh sách các từ điển dạng `{"role": ..., "content": ...}`. Chúng ta thêm 256 bản sao của chuỗi `"<|image|>"` vào đầu thông điệp đầu tiên của người dùng. Chúng ta gọi `tokenizer.apply_chat_template(messages, tokenize=False)` và truyền vào danh sách các từ điển `{"role": ..., "content": ...}` đó. Nó sẽ kết hợp cuộc hội thoại thành một chuỗi văn bản đã được định dạng duy nhất, trong đó các mã báo đặc biệt như `<|im_start|>`, `<|im_end|>` và các mã báo khác được chèn vào đúng vị trí.
 
-Then `tokenizer.encode(text)` converts that string to a list of token IDs. `input_ids` ends up with exactly 256 consecutive image token IDs at the start of the user turn, one slot per patch.
+Sau đó, `tokenizer.encode(text)` chuyển đổi chuỗi đó thành một danh sách các ID mã báo (token ID). `input_ids` cuối cùng sẽ chứa chính xác 256 ID mã báo hình ảnh liên tiếp ở đầu lượt của người dùng, mỗi mảnh chiếm một vị trí.
 
 ```python
 def tokenize_sample(sample, tokenizer, vlm_cfg):
-    image_token = tokenizer.image_token   # the "<|image|>" string
+    image_token = tokenizer.image_token   # chuỗi "<|image|>"
     messages = []
     for i, turn in enumerate(sample["texts"]):
         user_content = turn["user"]
-        if i == 0:   # prepend one image token per patch to the first user turn
+        if i == 0:   # thêm một mã báo hình ảnh cho mỗi mảnh vào đầu lượt đầu tiên của người dùng
             user_content = image_token * vlm_cfg.vision.num_patches + user_content
         messages.append({"role": "user",      "content": user_content})
         messages.append({"role": "assistant", "content": turn["assistant"]})
@@ -218,35 +218,35 @@ def tokenize_sample(sample, tokenizer, vlm_cfg):
     return tokenizer.encode(text)
 ```
 
-## Packing Samples Into Batches
+## Đóng gói các Mẫu vào Lô (Batch)
 
-One practical thing before training: how do we batch these samples? They vary wildly in length. One sample can contain a one-line caption, while another contains a long multi-turn conversation. Suppose we decide that each sequence fed into the language model contains only one sample. Because sequences are fed into the transformer as a batch, each sequence must have the same length. To feed samples of different lengths into the transformer, we would have to choose a sequence length large enough for both long and short samples to fit. If a sample is shorter than the maximum sequence length, we have to pad it with special padding tokens. That would mean our GPU is using a lot of resources to process fake tokens we don't care about. So instead we pack samples into fixed-length sequences of 2048 tokens, which we call knapsacks. Specifically, we follow this algorithm:
+Một vấn đề thực tế trước khi huấn luyện: làm thế nào để chúng ta chia lô (batch) các mẫu này? Độ dài của chúng khác nhau rất nhiều. Một mẫu có thể chỉ chứa một dòng chú thích ngắn, trong khi mẫu khác lại chứa một cuộc hội thoại dài nhiều lượt. Giả sử chúng ta quyết định mỗi chuỗi đưa vào mô hình ngôn ngữ chỉ chứa một mẫu. Vì các chuỗi được đưa vào transformer dưới dạng một lô, nên mỗi chuỗi phải có cùng độ dài. Để đưa các mẫu có độ dài khác nhau vào transformer, chúng ta sẽ phải chọn một độ dài chuỗi đủ lớn để cả mẫu dài lẫn mẫu ngắn đều vừa vặn. Nếu một mẫu ngắn hơn độ dài chuỗi tối đa, chúng ta phải đệm (pad) nó bằng các token đệm (padding token) đặc biệt. Điều đó có nghĩa là GPU của chúng ta đang tiêu tốn rất nhiều tài nguyên để xử lý các token giả mà chúng ta không quan tâm. Vì vậy, thay vào đó, chúng ta thực hiện đóng gói túi (Knapsack) / xếp thùng tối ưu các mẫu vào các chuỗi có độ dài cố định gồm 2048 token, chúng ta gọi là các túi (knapsack). Cụ thể, chúng ta tuân theo thuật toán sau:
 
-1. Collect pool_size samples into a pool.
-2. Sort by token length descending so long samples claim knapsack space first.
-3. For each sample, place it in the first existing knapsack with enough remaining space. If none fit, open a new knapsack.
-4. Right-pad each knapsack to max_knapsack_length.
-5. Accumulate completed knapsacks; yield a batch when max_batch_size are ready.
+1. Gom các mẫu có số lượng bằng `pool_size` vào một bể chứa (pool).
+2. Sắp xếp theo độ dài token giảm dần để các mẫu dài được ưu tiên xếp vào không gian túi trước.
+3. Đối với mỗi mẫu, đặt nó vào túi đầu tiên hiện có còn đủ không gian trống. Nếu không vừa túi nào, hãy mở một túi mới.
+4. Đệm về phía bên phải (right-pad) cho mỗi túi đạt đến độ dài `max_knapsack_length`.
+5. Tích lũy các túi đã hoàn thành; xuất ra một lô khi đã gom đủ số lượng `max_batch_size`.
 
-A single knapsack can hold several samples, which is a big part of what keeps the whole run cheap enough to fit our $100 budget.
+Một túi đơn lẻ có thể chứa nhiều mẫu khác nhau, đây là một yếu tố quan trọng giúp cho toàn bộ quá trình huấn luyện đủ rẻ để nằm trong ngân sách 100$ của chúng ta.
 
-<HtmlEmbed src="d3-knapsack-packing.html" title="Knapsack Packing" desc="" />
+<HtmlEmbed src="d3-knapsack-packing.html" title="Đóng gói túi (Knapsack Packing) / Xếp thùng tối ưu" desc="" />
 
-## Actual training!!!
+## Huấn luyện thực tế!!!
 
-We train with next-token prediction cross-entropy. Logit at position `t` predicts the token at `t+1`. Before computing the loss, two sets of positions are masked out: pad tokens (excluded via `ignore_index`) and image tokens (replaced with `-100` in the labels, so they fall under the same mask). In this way, we exclude from loss calculation the predicted distribution over any padding or image token.
+Chúng ta huấn luyện với hàm mất mát entropy chéo dự đoán token tiếp theo (next-token prediction cross-entropy). Logit tại vị trí `t` sẽ dự đoán token tại vị trí `t+1`. Trước khi tính toán hàm mất mát, hai nhóm vị trí sẽ được che mặt nạ (masked out): các token đệm (được loại trừ thông qua `ignore_index`) và các token hình ảnh (được thay thế bằng `-100` trong các nhãn nhắm chọn, để chúng rơi vào cùng một mặt nạ). Bằng cách này, chúng ta loại trừ khỏi việc tính toán hàm mất mát phân phối dự đoán trên bất kỳ token đệm hoặc token hình ảnh nào.
 
-Why exclude image tokens? Because we only ever ask the model to predict the next *text* token. We never want it to predict "what the next image patch should look like," so those positions shouldn't contribute to the loss. Replacing their labels with `-100` tells PyTorch's cross-entropy to skip them:
+Tại sao lại loại trừ các token hình ảnh? Bởi vì chúng ta chỉ yêu cầu mô hình dự đoán token *văn bản* tiếp theo. Chúng ta không bao giờ muốn nó dự đoán "mảnh ảnh tiếp theo trông như thế nào", vì vậy những vị trí đó không nên đóng góp vào hàm mất mát. Việc thay thế nhãn của chúng bằng `-100` sẽ báo cho hàm entropy chéo của PyTorch bỏ qua chúng:
 
-<HtmlEmbed src="d3-loss-mask.html" title="Which predictions contribute to the loss" desc="Every token is trained to predict the next one (arrows). A step is scored only when its target is real text; image-token and padding targets are ignored (label set to -100)." />
+<HtmlEmbed src="d3-loss-mask.html" title="Những dự đoán nào đóng góp vào hàm mất mát" desc="Mỗi token đều được huấn luyện để dự đoán token tiếp theo (mũi tên). Một bước chỉ được tính điểm khi mục tiêu của nó là văn bản thực tế; các mục tiêu là token hình ảnh và token đệm sẽ bị bỏ qua (nhãn được đặt thành -100)." />
 
-In code:
+Trong mã nguồn:
 
 ```python
 logits = vlm(input_ids, image)
 labels = input_ids.clone()
-labels[labels == image_token_id]    = -100   # don't predict image tokens
-labels[labels == pad_token_id]      = -100   # don't predict padding
+labels[labels == image_token_id]    = -100   # không dự đoán các mã báo hình ảnh
+labels[labels == pad_token_id]      = -100   # không dự đoán mã báo đệm (padding)
 shift_logits = logits[:, :-1, :]
 shift_labels = labels[:, 1:]
 loss = F.cross_entropy(
@@ -256,63 +256,62 @@ loss = F.cross_entropy(
 )
 ```
 
-### Data and Decoder
-We will train the model on the FineVision dataset, which is "meticulously collected, curated, and unified corpus of 24 million samples" for training VLMs.
-We wanted to see how small the decoder could be while still performing reasonably well in an encoder-free VLM. So, as our decoder, we picked the tiny SmolLM2-135M-Instruct. For example, the smallest multimodal model out there, SmolVLM-256M, uses SmolLM2-135M-Instruct as its language model and a 93M SigLIP vision encoder.
+### Dữ liệu và Bộ giải mã (Decoder)
+Chúng ta sẽ huấn luyện mô hình trên tập dữ liệu FineVision, một "tập hợp dữ liệu khổng lồ gồm 24 triệu mẫu được thu thập, tinh tuyển và hợp nhất một cách tỉ mỉ" để huấn luyện các VLM.
+Chúng ta muốn xem bộ giải mã (decoder) có thể nhỏ đến mức nào mà vẫn hoạt động tốt ở mức hợp lý trong một mô hình VLM không dùng bộ mã hóa (encoder-free VLM). Vì vậy, đối với bộ giải mã của mình, chúng ta đã chọn mô hình SmolLM2-135M-Instruct siêu nhỏ. Để so sánh, mô hình đa phương thức nhỏ nhất hiện nay là SmolVLM-256M sử dụng SmolLM2-135M-Instruct làm mô hình ngôn ngữ của nó và bộ mã hóa thị giác SigLIP 93M.
 
-After training, we decided to read the responses our model generates, and found that most are of this quality:
+Sau khi huấn luyện, chúng ta đã thử đọc các câu trả lời mà mô hình tạo ra và nhận thấy hầu hết chúng đều có chất lượng như thế này:
 
-<Image src={responseMonkey} alt="SmolLM2-135M's response to a photo of a monkey" caption="SmolLM2-135M's reply: fluent text that has nothing to do with the monkey in the photo." />
+<Image src={responseMonkey} alt="Phản hồi của SmolLM2-135M đối với ảnh chụp một chú khỉ" caption="Câu trả lời của SmolLM2-135M: văn bản trôi chảy nhưng hoàn toàn không liên quan đến chú khỉ trong ảnh." />
 
-"2D image with black background" 😭😭😭. Hmm, what do we do now?
+"Hình ảnh 2D với nền màu đen" 😭😭😭. Hừm, giờ chúng ta phải làm gì đây?
 
-### A bigger decoder
+### Một bộ giải mã (Decoder) lớn hơn
 
-In the beginning, we mentioned that the encoder-free approach makes sense if the decoder is powerful enough. It looks like the SmolLM2 with 135M params is too small, so let's replace it with SmolLM2-360M-Instruct.
+Ngay từ đầu, chúng ta đã đề cập rằng phương pháp tiếp cận không dùng bộ mã hóa (encoder-free) chỉ thực sự có ý nghĩa nếu bộ giải mã (decoder) đủ mạnh. Có vẻ như SmolLM2 với 135 triệu tham số là quá nhỏ, vì vậy hãy thay thế nó bằng SmolLM2-360M-Instruct.
 
-After 8 hours of training, we generated the model's responses to several images.
+Sau 8 giờ huấn luyện, chúng ta đã tạo ra phản hồi của mô hình đối với một vài hình ảnh.
 
-<Image src={responseCat} alt="SmolLM2-360M's response to a photo of a cat" caption="A bigger decoder (SmolLM2-360M), still describing things that aren't in the picture." />
+<Image src={responseCat} alt="Phản hồi của SmolLM2-360M đối với ảnh chụp một chú mèo" caption="Một bộ giải mã lớn hơn (SmolLM2-360M), nhưng vẫn mô tả những thứ không có trong ảnh." />
 
-### Trying an even bigger decoder and different data
+### Thử nghiệm bộ giải mã lớn hơn nữa và dữ liệu khác
 
-After two unsuccessful attempts, we decided to explore FineVision and discovered that it contains many "advanced" samples, like questions about chemical diagrams or images of LaTeX text. We thought this might be too much for a model that is only learning "to see," so we tried to find subsets of FineVision with simpler samples.
+Sau hai lần thử không thành công, chúng ta quyết định khám phá tập dữ liệu FineVision và phát hiện ra rằng nó chứa nhiều mẫu "nâng cao", chẳng hạn như các câu hỏi về sơ đồ hóa học hoặc hình ảnh văn bản công thức LaTeX. Chúng ta nghĩ rằng điều này có thể là quá sức đối với một mô hình mới chỉ đang học cách "nhìn", vì vậy chúng ta đã cố gắng tìm các tập con của FineVision với các mẫu đơn giản hơn.
 
-We also scaled the decoder up to Qwen 3 1.7B and trained it on these different subsets of FineVision. You can see the validation loss curves below.
+Chúng ta cũng nâng quy mô bộ giải mã lên Qwen 3 1.7B và huấn luyện nó trên các tập con khác nhau này của FineVision. Bạn có thể thấy các đường cong hàm mất mát trên tập đánh giá (validation loss curve) ở bên dưới.
 
-<Image src={lossCurvesQwen3} alt="Validation loss curves for Qwen 3 1.7B across five FineVision subsets" caption="Validation loss for Qwen 3 1.7B across five FineVision subsets. Only <strong>densefusion + sharegpt4v</strong> (pink) keeps decreasing. The smaller subsets overfit and curve back up." />
+<Image src={lossCurvesQwen3} alt="Các đường cong hàm mất mát trên tập kiểm định của Qwen 3 1.7B trên năm tập con FineVision" caption="Hàm mất mát trên tập kiểm định của Qwen 3 1.7B trên năm tập con FineVision. Chỉ có <strong>densefusion + sharegpt4v</strong> (màu hồng) tiếp tục giảm xuống. Các tập con nhỏ hơn bị quá khớp (overfit) và có xu hướng tăng trở lại." />
 
-Each run uses a different training and validation set, so you shouldn't compare the validation losses across runs. Just look at the behavior of each curve. For every run, every 10th sample in its training set was reserved for validation.
+Mỗi lượt chạy sử dụng một tập huấn luyện và tập kiểm định khác nhau, vì vậy bạn không nên so sánh các giá trị loss kiểm định giữa các lượt chạy. Hãy chỉ nhìn vào hành vi của từng đường cong. Đối với mỗi lượt chạy, mỗi mẫu thứ 10 trong tập huấn luyện của nó được dành riêng cho việc kiểm định.
 
-The model overfit the smaller subsets, like LLaVA_Instruct_150K, and even combinations of small subsets, like LLaVA_Instruct_150K + lvis_instruct4v. We only got good performance on densefusion + sharegpt4v, which together contain about 1.15M samples.
+Mô hình đã bị quá khớp với các tập con nhỏ hơn, chẳng hạn như LLaVA_Instruct_150K, và thậm chí cả các kết hợp của các tập con nhỏ, ví dụ như LLaVA_Instruct_150K + lvis_instruct4v. Chúng ta chỉ đạt được hiệu suất tốt trên densefusion + sharegpt4v, cả hai tập dữ liệu này cùng nhau chứa khoảng 1,15 triệu mẫu.
 
-## Results
+## Kết quả
 
-We trained our model on densefusion + sharegpt4v for 43 hours at a cost of about $100, and finally, we have a model that can say something sensible about images!
+Chúng ta đã huấn luyện mô hình của mình trên densefusion + sharegpt4v trong 43 giờ với chi phí khoảng 100$, và cuối cùng, chúng ta đã có một mô hình có thể đưa ra những nhận xét hợp lý về các hình ảnh!
 
-Here, we take this model and ask it to describe a handful of images it hasn't seen during training. Most of its answers are now grounded in what's actually in the photo, though far from perfect (for example, it can mistake a cat for a dog).
+Tại đây, chúng ta lấy mô hình này và yêu cầu nó mô tả một số hình ảnh mà nó chưa từng thấy trong quá trình huấn luyện. Hầu hết các câu trả lời của nó giờ đây đã bám sát những gì thực sự có trong ảnh, mặc dù còn xa mới đạt mức hoàn hảo (ví dụ, nó có thể nhầm lẫn mèo với chó).
 
-<Image src={responseSki} alt="The model's response to a photo of people on a ski slope" caption="" />
+<Image src={responseSki} alt="Phản hồi của mô hình đối với ảnh chụp mọi người trên dốc trượt tuyết" caption="" />
 
-<Image src={responseSf} alt="The model's response to a photo of a coastal landscape" caption="" />
+<Image src={responseSf} alt="Phản hồi của mô hình đối với ảnh chụp phong cảnh bờ biển" caption="" />
 
-<Image src={responseTree} alt="The model's response to a photo of a red tree" caption="" />
+<Image src={responseTree} alt="Phản hồi của mô hình đối với ảnh chụp một cái cây màu đỏ" caption="" />
 
-<Image src={responseDome} alt="The model's response to a photo of MIT's Great Dome" caption="" />
+<Image src={responseDome} alt="Phản hồi của mô hình đối với ảnh chụp Mái vòm Lớn (Great Dome) của MIT" caption="" />
 
-<Image src={responseCat2} alt="The model's response to a photo of a cat on a couch" caption="" />
-
-
-## Thank you!
-Thank you for exploring encoder-free VLMs with us! Feedback is greatly appreciated - please share it in the community section of the blog. 
-If you want to learn more about VLMs, definitely check out [Vision Language Models: Building VLMs with Hugging Face](https://vlmbook.com)
+<Image src={responseCat2} alt="Phản hồi của mô hình đối với ảnh chụp một chú mèo trên ghế sofa" caption="" />
 
 
-## Reference list
+## Cảm ơn bạn!
+Cảm ơn bạn đã cùng chúng tôi tìm hiểu về các mô hình VLM không dùng bộ mã hóa (encoder-free VLM)! Mọi ý kiến phản hồi đều rất đáng quý - xin vui lòng chia sẻ chúng trong phần cộng đồng của blog này. 
+Nếu bạn muốn tìm hiểu thêm về các VLM, chắc chắn hãy tham khảo cuốn sách [Vision Language Models: Building VLMs with Hugging Face](https://vlmbook.com)
+
+
+## Danh mục tài liệu tham khảo
 - Dosovitskiy et al., [*An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale*](https://arxiv.org/abs/2010.11929) (ViT)
-- Hugging Face, [*FineVision* dataset explorer](https://huggingface.co/spaces/HuggingFaceM4/FineVision)
-- Hugging Face, [*nanoVLM: The simplest repository to train your VLM*](https://huggingface.co/blog/nanovlm)
-- [*The Vision Language Model book*](https://vlmbook.com)
-- Maarten Grootendorst, [*A Visual Guide to Gemma 4 12B*](https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-gemma-4-12b)
-- Google, [*Gemma 4 12B: The Developer Guide*](https://developers.googleblog.com/gemma-4-12b-the-developer-guide/)
-
+- Hugging Face, [Trình khám phá tập dữ liệu *FineVision*](https://huggingface.co/spaces/HuggingFaceM4/FineVision)
+- Hugging Face, [*nanoVLM: Kho lưu trữ đơn giản nhất để huấn luyện VLM của bạn*](https://huggingface.co/blog/nanovlm)
+- [*Sách về Mô hình Ngôn ngữ Thị giác*](https://vlmbook.com)
+- Maarten Grootendorst, [*Hướng dẫn trực quan về Gemma 4 12B*](https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-gemma-4-12b)
+- Google, [*Gemma 4 12B: Hướng dẫn dành cho nhà phát triển*](https://developers.googleblog.com/gemma-4-12b-the-developer-guide/)

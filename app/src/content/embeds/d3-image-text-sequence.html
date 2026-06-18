@@ -91,32 +91,32 @@
         imgG.append('text').attr('class', 'ellipsis').attr('x', x + 14).attr('y', CY).attr('dominant-baseline', 'central').attr('font-size', 20).text('⋯'); x += 38;
         imgRects.push(chip(imgG, x, iw, PAL.blue, '<|image|>', true)); x += iw;
         const imgRight = x;
-        brace(imgG, 24, imgRight, null, ['256 patch embeddings']);
-        hoverable(imgG, imgRects, '<b>256 image slots</b><br>Placeholder <code>&lt;|image|&gt;</code> tokens — at forward time their embeddings are overwritten with the patch embeddings from the vision embedder.');
+        brace(imgG, 24, imgRight, null, ['256 phần nhúng mảnh ảnh']);
+        hoverable(imgG, imgRects, '<b>256 vị trí ảnh</b><br>Các token giữ chỗ <code>&lt;|image|&gt;</code> — khi lan truyền xuôi (forward time), phần nhúng của chúng sẽ được ghi đè bằng phần nhúng mảnh ảnh từ bộ nhúng thị giác.');
 
         // ---- text group: the question, as ordinary text tokens ----
         const txtG = svg.append('g');
-        const words = ['What', 'colour', 'is', 'the', 'car?'];
+        const words = ['Chiếc', 'xe', 'màu', 'gì?'];
         let tx = imgRight + 60;
         const txtStart = tx;
         const txtRects = [];
         words.forEach(w => { const ww = Math.max(48, 13 + w.length * 9.5); txtRects.push(chip(txtG, tx, ww, PAL.purple, w, false)); tx += ww + 8; });
         const txtRight = tx - 8;
-        brace(txtG, txtStart, txtRight, null, ['text tokens', "(from the LM's embedding table)"]);
-        hoverable(txtG, txtRects, "<b>Text tokens</b><br>The user's question, turned into embeddings by the language model's own embedding table.");
+        brace(txtG, txtStart, txtRight, null, ['các token văn bản', "(từ bảng nhúng của LM)"]);
+        hoverable(txtG, txtRects, "<b>Các token văn bản</b><br>Câu hỏi của người dùng, được chuyển thành phần nhúng bằng bảng nhúng của chính mô hình ngôn ngữ (LM).");
 
         // ---- arrow + generated answer ----
         svg.append('path').attr('d', `M${txtRight + 14},${CY} L${txtRight + 54},${CY}`)
           .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2).attr('marker-end', 'url(#its-arrow)');
         const ansG = svg.append('g');
         const ansX = txtRight + 64, ansW = VBW - ansX - 16;
-        const ansRect = chip(ansG, ansX, Math.min(ansW, 110), PAL.pink, 'Blue.', false);
-        brace(ansG, ansX, ansX + Math.min(ansW, 110), null, ['generated']);
-        hoverable(ansG, [ansRect], '<b>Generated answer</b><br>The decoder predicts this text one token at a time, attending over image + text together.');
+        const ansRect = chip(ansG, ansX, Math.min(ansW, 110), PAL.pink, 'Màu xanh.', false);
+        brace(ansG, ansX, ansX + Math.min(ansW, 110), null, ['được tạo']);
+        hoverable(ansG, [ansRect], '<b>Câu trả lời được tạo</b><br>Bộ giải mã dự đoán văn bản này theo từng token một, chú ý (attending) đồng thời vào cả hình ảnh và văn bản.');
       }
       render();
 
-      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover the image slots, text tokens, or answer for details.'; container.appendChild(h); }
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Di chuột qua các vị trí ảnh, token văn bản hoặc câu trả lời để xem chi tiết.'; container.appendChild(h); }
       if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
       else { window.addEventListener('resize', render); }
     };

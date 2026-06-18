@@ -100,8 +100,8 @@
         return { cx, cy };
       }
 
-      const flattenedInput = (x, cy) => nodeBox(svg, x, cy - 40, 72, 80, PAL.red, ['Flattened', 'Patches'],
-        '<b>Flattened patches</b><br>The image cut into 32×32 patches, each flattened to a 3072-long vector.', 11);
+      const flattenedInput = (x, cy) => nodeBox(svg, x, cy - 40, 72, 80, PAL.red, ['Mảnh ảnh', 'trải phẳng'],
+        '<b>Mảnh ảnh trải phẳng</b><br>Ảnh được cắt thành các mảnh 32×32, mỗi mảnh được làm phẳng thành một vectơ độ dài 3072.', 11);
 
       // one pre-norm transformer block: Norm → Attention → ⊕ → Norm → MLP → ⊕, with two residuals
       function block(bx, by, bw, bh, cy) {
@@ -111,12 +111,12 @@
           .attr('fill', 'color-mix(in oklab, var(--muted-color) 7%, var(--surface-bg))');
 
         const resY = by + bh - 28;  // row where residual skip lines run
-        nodeBox(g, bx + 16, cy - 33, 42, 66, PAL.yellow, ['Layer', 'Norm'], '<b>LayerNorm</b><br>Normalises each token before attention (pre-norm).', 11);
-        nodeBox(g, bx + 74, cy - 42, 78, 84, PAL.green, ['Multi-Head', 'Attention'], '<b>Multi-head self-attention</b><br>Mixes information across all patches.', 12);
-        addNode(g, bx + 176, cy, '<b>Residual add</b><br>Adds the block input back to the attention output.');
-        nodeBox(g, bx + 196, cy - 33, 42, 66, PAL.yellow, ['Layer', 'Norm'], '<b>LayerNorm</b><br>Normalises again before the MLP.', 11);
-        nodeBox(g, bx + 252, cy - 33, 54, 66, PAL.blue, ['MLP'], '<b>Feed-forward MLP</b><br>Two linear layers with a non-linearity, applied per token.', 13);
-        addNode(g, bx + 324, cy, '<b>Residual add</b><br>Adds the MLP input back to the MLP output.');
+        nodeBox(g, bx + 16, cy - 33, 42, 66, PAL.yellow, ['Chuẩn hóa', 'lớp (LN)'], '<b>LayerNorm (Chuẩn hóa lớp)</b><br>Chuẩn hóa từng token trước cơ chế attention (pre-norm).', 11);
+        nodeBox(g, bx + 74, cy - 42, 78, 84, PAL.green, ['Attention', 'nhiều đầu'], '<b>Cơ chế tự chú ý nhiều đầu (Multi-head self-attention)</b><br>Trộn thông tin giữa tất cả các mảnh ảnh với nhau.', 12);
+        addNode(g, bx + 176, cy, '<b>Cộng phần dư (Residual Add)</b><br>Cộng đầu vào của khối với đầu ra của cơ chế attention.');
+        nodeBox(g, bx + 196, cy - 33, 42, 66, PAL.yellow, ['Chuẩn hóa', 'lớp (LN)'], '<b>LayerNorm (Chuẩn hóa lớp)</b><br>Chuẩn hóa lại trước khi đưa vào MLP.', 11);
+        nodeBox(g, bx + 252, cy - 33, 54, 66, PAL.blue, ['MLP'], '<b>Mạng truyền thẳng MLP (Feed-forward MLP)</b><br>Gồm hai lớp tuyến tính với một hàm phi tuyến tính, được áp dụng trên từng token.', 13);
+        addNode(g, bx + 324, cy, '<b>Cộng phần dư (Residual Add)</b><br>Cộng đầu vào của MLP với đầu ra của MLP.');
 
         // main horizontal flow
         arrow(g, bx + 2, cy, bx + 16, cy);
@@ -137,7 +137,7 @@
 
         // ---------- TOP: vision encoder ----------
         svg.append('text').attr('class', 'panel-title').attr('x', 16).attr('y', 30).attr('font-size', 18)
-          .text('Vision encoder (many transformer blocks)');
+          .text('Bộ mã hóa thị giác (nhiều khối transformer)');
 
         const encCy = 150, blkTop = 72, blkH = 190, blkW = 346;
         flattenedInput(16, encCy);
@@ -152,7 +152,7 @@
         arrow(svg, bx3 + blkW + 2, encCy, 1344, encCy);
 
         // ---------- BOTTOM: embedder (deliberately smaller than one encoder block) ----------
-        svg.append('text').attr('class', 'panel-title').attr('x', 16).attr('y', 300).attr('font-size', 18).text('Embedder');
+        svg.append('text').attr('class', 'panel-title').attr('x', 16).attr('y', 300).attr('font-size', 18).text('Bộ nhúng (Embedder)');
 
         const emCy = 372, emTop = 316, emH = 148, emBx = 108, emW = 300;
         const eg = svg.append('g');
@@ -161,12 +161,12 @@
           .attr('fill', 'color-mix(in oklab, var(--muted-color) 7%, var(--surface-bg))');
 
         flattenedInput(16, emCy);
-        nodeBox(eg, emBx + 16, emCy - 24, 40, 48, PAL.yellow, ['Layer', 'Norm'], '<b>LayerNorm</b><br>Normalises each flattened patch.', 10);
-        nodeBox(eg, emBx + 66, emCy - 24, 70, 48, PAL.purple, ['Linear', 'Projection'], '<b>Linear projection</b><br>One learned matrix mapping 3072 → hidden_size. The only "real" layer.', 10);
-        nodeBox(eg, emBx + 146, emCy - 24, 40, 48, PAL.yellow, ['Layer', 'Norm'], '<b>LayerNorm</b><br>Normalises after projection.', 10);
-        addNode(eg, emBx + 212, emCy, '<b>Add positional embedding</b><br>Adds the factorised row + column position vectors.');
-        nodeBox(eg, emBx + 232, emCy - 24, 40, 48, PAL.yellow, ['Layer', 'Norm'], '<b>LayerNorm</b><br>Final normalisation before output.', 10);
-        nodeBox(eg, emBx + 168, emCy + 32, 88, 34, PAL.gray, ['Positional', 'Embedding'], '<b>Positional embedding</b><br>Factorised row + column tables, added to every patch.', 9.5);
+        nodeBox(eg, emBx + 16, emCy - 24, 40, 48, PAL.yellow, ['Chuẩn hóa', 'lớp (LN)'], '<b>LayerNorm (Chuẩn hóa lớp)</b><br>Chuẩn hóa từng mảnh ảnh đã được trải phẳng.', 10);
+        nodeBox(eg, emBx + 66, emCy - 24, 70, 48, PAL.purple, ['Chiếu', 'tuyến tính'], '<b>Chiếu tuyến tính (Linear projection)</b><br>Một ma trận học được giúp ánh xạ 3072 → hidden_size. Đây là lớp học được "thực sự" duy nhất ở đây.', 10);
+        nodeBox(eg, emBx + 146, emCy - 24, 40, 48, PAL.yellow, ['Chuẩn hóa', 'lớp (LN)'], '<b>LayerNorm (Chuẩn hóa lớp)</b><br>Chuẩn hóa sau khi chiếu tuyến tính.', 10);
+        addNode(eg, emBx + 212, emCy, '<b>Cộng nhúng vị trí (Positional Embedding)</b><br>Cộng các vectơ vị trí hàng + cột đã phân tích nhân tử.');
+        nodeBox(eg, emBx + 232, emCy - 24, 40, 48, PAL.yellow, ['Chuẩn hóa', 'lớp (LN)'], '<b>LayerNorm (Chuẩn hóa lớp)</b><br>Chuẩn hóa cuối cùng trước khi đưa ra đầu ra.', 10);
+        nodeBox(eg, emBx + 168, emCy + 32, 88, 34, PAL.gray, ['Nhúng', 'vị trí'], '<b>Nhúng vị trí (Positional embedding)</b><br>Các bảng hàng + cột được phân tích nhân tử, được cộng vào mỗi mảnh ảnh.', 9.5);
 
         arrow(eg, 88, emCy, emBx - 2, emCy);
         arrow(eg, emBx + 2, emCy, emBx + 16, emCy);
@@ -181,14 +181,14 @@
 
       // Legend
       let legend = container.querySelector('.legend');
-      if (!legend) { legend = document.createElement('div'); legend.className = 'legend'; legend.innerHTML = '<div class="legend-title">Legend</div><div class="items"></div>'; container.appendChild(legend); }
+      if (!legend) { legend = document.createElement('div'); legend.className = 'legend'; legend.innerHTML = '<div class="legend-title">Chú giải</div><div class="items"></div>'; container.appendChild(legend); }
       const items = legend.querySelector('.items'); items.innerHTML = '';
-      [['Flattened patches', PAL.red], ['LayerNorm', PAL.yellow], ['Multi-Head Attention', PAL.green], ['MLP', PAL.blue], ['Linear Projection', PAL.purple], ['Positional Embedding', PAL.gray]].forEach(([name, color]) => {
+      [['Mảnh ảnh trải phẳng', PAL.red], ['LayerNorm (LN)', PAL.yellow], ['Attention nhiều đầu', PAL.green], ['MLP', PAL.blue], ['Chiếu tuyến tính', PAL.purple], ['Nhúng vị trí', PAL.gray]].forEach(([name, color]) => {
         const el = document.createElement('span'); el.className = 'item';
         const sw = document.createElement('span'); sw.className = 'swatch'; sw.style.background = tint(color, 0.32); sw.style.borderColor = color;
         const tx = document.createElement('span'); tx.textContent = name; el.appendChild(sw); el.appendChild(tx); items.appendChild(el);
       });
-      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover any block for details. The + nodes are residual (skip) connections. The encoder runs many such blocks; the embedder has none.'; container.appendChild(h); }
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Di chuột qua khối bất kỳ để xem chi tiết. Các nút + là các kết nối phần dư (skip connection). Bộ mã hóa chạy nhiều khối như vậy; bộ nhúng thì không.'; container.appendChild(h); }
 
       if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
       else { window.addEventListener('resize', render); }

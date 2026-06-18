@@ -53,12 +53,12 @@
 
       // The six pipeline steps: [number, role color, name, shape, note, tooltip]
       const STEPS = [
-        [1, PAL.purple, 'Patchify', '(B, C, H, W) → (B, N, C·P²)', 'Split image into N flattened patch embeddings', '<b>Patchify</b><br>Cut the image into 256 patches and flatten each to a 3072-dim vector.'],
-        [2, PAL.blue, 'LayerNorm', '(B, N, C·P²) → (B, N, C·P²)', 'Normalize each flattened patch independently', '<b>LayerNorm</b><br>Normalise each flattened patch independently.'],
-        [3, PAL.green, 'Linear', '(B, N, C·P²) → (B, N, D)', 'Project each patch embedding to the output dimension', '<b>Linear</b><br>Project each patch from 3072 → D (the decoder’s hidden size). This single matrix is the whole ‘encoder’.'],
-        [4, PAL.blue, 'LayerNorm', '(B, N, D) → (B, N, D)', 'Normalize each projected patch independently', '<b>LayerNorm</b><br>Normalise each projected patch independently.'],
-        [5, PAL.pink, 'Add pos. embedding', '(B, N, D) → (B, N, D)', 'Inject into each patch embedding info about its position in the image', '<b>Add positional embedding</b><br>Inject where each patch sits in the 16×16 grid.'],
-        [6, PAL.blue, 'LayerNorm', '(B, N, D) → (B, N, D)', 'Final normalization', '<b>LayerNorm</b><br>Final normalisation before the patches enter the decoder.']
+        [1, PAL.purple, 'Phân mảnh ảnh (Patchify)', '(B, C, H, W) → (B, N, C·P²)', 'Cắt hình ảnh thành N phần nhúng mảnh ảnh được trải phẳng', '<b>Phân mảnh ảnh (Patchify)</b><br>Cắt hình ảnh thành 256 mảnh và trải phẳng mỗi mảnh thành một vectơ 3072 chiều.'],
+        [2, PAL.blue, 'LayerNorm (LN)', '(B, N, C·P²) → (B, N, C·P²)', 'Chuẩn hóa độc lập từng mảnh ảnh đã được trải phẳng', '<b>LayerNorm (Chuẩn hóa lớp)</b><br>Chuẩn hóa độc lập từng mảnh ảnh đã được trải phẳng.'],
+        [3, PAL.green, 'Lớp Tuyến tính (Linear)', '(B, N, C·P²) → (B, N, D)', 'Chiếu từng phần nhúng mảnh ảnh lên chiều đầu ra', '<b>Lớp tuyến tính (Linear)</b><br>Chiếu từng mảnh từ 3072 → D (kích thước ẩn của bộ giải mã). Ma trận duy nhất này đóng vai trò như toàn bộ "bộ mã hóa".'],
+        [4, PAL.blue, 'LayerNorm (LN)', '(B, N, D) → (B, N, D)', 'Chuẩn hóa độc lập từng mảnh ảnh đã chiếu', '<b>LayerNorm (Chuẩn hóa lớp)</b><br>Chuẩn hóa độc lập từng mảnh ảnh đã được chiếu tuyến tính.'],
+        [5, PAL.pink, 'Cộng nhúng vị trí', '(B, N, D) → (B, N, D)', 'Thêm thông tin về vị trí của mảnh ảnh trong ảnh vào phần nhúng mảnh', '<b>Cộng nhúng vị trí (Positional Embedding)</b><br>Nhúng thông tin về vị trí của từng mảnh ảnh trong lưới 16×16.'],
+        [6, PAL.blue, 'LayerNorm (LN)', '(B, N, D) → (B, N, D)', 'Chuẩn hóa cuối cùng', '<b>LayerNorm (Chuẩn hóa lớp)</b><br>Chuẩn hóa lớp cuối cùng trước khi các mảnh ảnh đi vào bộ giải mã.']
       ];
 
       const VBW = 1200, VBH = 980;
@@ -178,27 +178,29 @@
       let legend = container.querySelector('.legend');
       if (!legend) {
         legend = document.createElement('div'); legend.className = 'legend';
-        legend.innerHTML = '<div class="legend-title">Legend</div><div class="items"></div>';
+        legend.innerHTML = '<div class="legend-title">Chú giải</div><div class="items"></div>';
         container.appendChild(legend);
       }
       const items = legend.querySelector('.items');
       const glossary = [
-        'B = batch size',
-        'C = input channels',
-        'H, W = image height/width',
-        'P = patch size',
-        'N = number of patches',
-        'C·P² = flattened patch dimension',
-        'D = output embedding dimension'
+        'B = kích thước lô (batch size)',
+        'C = số kênh đầu vào (channels)',
+        'H, W = chiều cao/chiều rộng ảnh',
+        'P = kích thước mảnh ảnh',
+        'N = số lượng mảnh ảnh',
+        'C·P² = số chiều mảnh ảnh trải phẳng',
+        'D = số chiều nhúng đầu ra'
       ];
       items.innerHTML = '';
       glossary.forEach((name) => {
         const el = document.createElement('span'); el.className = 'item';
+        const sw = document.createElement('span'); sw.className = 'swatch';
+        sw.style.display = 'none'; // hide swatch for symbol glossary
         const tx = document.createElement('span'); tx.textContent = name;
-        el.appendChild(tx); items.appendChild(el);
+        el.appendChild(sw); el.appendChild(tx); items.appendChild(el);
       });
 
-      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover a step for what it does.'; container.appendChild(h); }
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Di chuột qua một bước để xem chức năng của nó.'; container.appendChild(h); }
 
       if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
       else { window.addEventListener('resize', render); }

@@ -63,27 +63,27 @@
         {
           color: PAL.blue,
           vec: '[0.3, -0.1, 0.8, ...]',
-          label: 'patch at pos. (4, 5):',
-          annot: ['← flattened patch embedding'],
-          tip: '<b>Patch embedding</b><br>What a patch looks like — but with no information about where it sits in the image.'
+          label: 'mảnh tại vị trí (4, 5):',
+          annot: ['← nhúng mảnh ảnh trải phẳng'],
+          tip: '<b>Nhúng mảnh ảnh</b><br>Đặc trưng nội dung mảnh ảnh — nhưng không chứa thông tin về vị trí của nó trong ảnh.'
         },
         {
           color: PAL.green,
           vec: '[0.1, 0.4, -0.2, ...]',
-          label: 'positional embedding:',
+          label: 'nhúng vị trí:',
           annot: [
-            '← learned vector that encodes',
-            '"this patch is at position (4, 5)"',
-            '(one such vector per patch position)'
+            '← vectơ học được mã hóa thông tin',
+            '"mảnh này nằm ở vị trí (4, 5)"',
+            '(mỗi vị trí mảnh có một vectơ như vậy)'
           ],
-          tip: '<b>Positional embedding</b><br>A learned vector for grid position (4, 5). One per patch position.'
+          tip: '<b>Nhúng vị trí (Positional Embedding)</b><br>Một vectơ học được đại diện cho vị trí lưới (4, 5). Có một vectơ cho mỗi vị trí mảnh.'
         },
         {
           color: PAL.pink,
           vec: '[0.4, 0.3, 0.6, ...]',
-          label: 'result:',
-          annot: ['← fed to the decoder / language model'],
-          tip: '<b>Result</b><br>Element-wise sum: patch content + its position. This is what the decoder receives.'
+          label: 'kết quả:',
+          annot: ['← đưa vào bộ giải mã / mô hình ngôn ngữ'],
+          tip: '<b>Kết quả</b><br>Tổng theo từng phần tử: nội dung mảnh + vị trí của nó. Đây là những gì bộ giải mã nhận được.'
         }
       ];
 
@@ -162,7 +162,7 @@
       }
       render();
 
-      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover a bar to see what it carries.'; container.appendChild(h); }
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Di chuột qua một thanh để xem thông tin nó chứa đựng.'; container.appendChild(h); }
 
       if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
       else { window.addEventListener('resize', render); }

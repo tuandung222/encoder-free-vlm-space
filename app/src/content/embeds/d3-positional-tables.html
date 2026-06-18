@@ -77,7 +77,7 @@
         const px = 8, pw = 484, py = 64, ph = VBH - 64 - 16;
         const g = svg.append('g');
 
-        header(g, px + 8, 28, 'Full table: (16, 16, hidden_size)', '16 · 16 · hidden_size = 256 · hidden_size parameters');
+        header(g, px + 8, 28, 'Bảng đầy đủ: (16, 16, hidden_size)', '16 · 16 · hidden_size = 256 · hidden_size tham số');
 
         g.append('rect').attr('class', 'frame').attr('x', px).attr('y', py)
           .attr('width', pw).attr('height', ph).attr('rx', 14).attr('stroke-width', 1.5);
@@ -101,7 +101,7 @@
               if (rowBars[gi]) rowBars[gi].attr('stroke-width', 3.5);
               if (colBars[gj]) colBars[gj].attr('stroke-width', 3.5);
             })
-            .on('mousemove', (e) => showTip(e, `<b>Position (${gi}, ${gj})</b><br>Full table: one independent hidden_size-dim vector.<br>Factorized: E_row[${gi}] + E_col[${gj}].`))
+            .on('mousemove', (e) => showTip(e, `<b>Vị trí (${gi}, ${gj})</b><br>Bảng đầy đủ: một vectơ độc lập chiều hidden_size.<br>Phân tích nhân tử: E_row[${gi}] + E_col[${gj}].`))
             .on('mouseleave', function () {
               d3.select(this).attr('stroke-width', 1.5);
               if (rowBars[gi]) rowBars[gi].attr('stroke-width', 1.5);
@@ -161,7 +161,7 @@
         const capY = gy0 + 8 * step + 24;
         g.append('text').attr('class', 'caption').attr('x', px + pw / 2).attr('y', capY)
           .attr('text-anchor', 'middle').attr('font-size', 12.5)
-          .text('One independent hidden_size-dim vector for each of 16·16 = 256 positions');
+          .text('Một vectơ độc lập chiều hidden_size cho mỗi vị trí trong số 16·16 = 256 vị trí');
       }
 
       // ---- RIGHT panel: factorized E_row + E_col ----
@@ -169,7 +169,7 @@
         const px = 508, pw = 484, py = 64, ph = VBH - 64 - 16;
         const g = svg.append('g');
 
-        header(g, px + 8, 28, 'Factorized: E_row (16, hidden_size) and E_col (16, hidden_size)', '(16·hidden_size) + (16·hidden_size) = 32 · hidden_size parameters');
+        header(g, px + 8, 28, 'Phân tích nhân tử: E_row (16, hidden_size) và E_col (16, hidden_size)', '(16·hidden_size) + (16·hidden_size) = 32 · hidden_size tham số');
 
         g.append('rect').attr('class', 'frame').attr('x', px).attr('y', py)
           .attr('width', pw).attr('height', ph).attr('rx', 14).attr('stroke-width', 1.5);
@@ -198,8 +198,8 @@
               .attr('fill', tint(baseColor, amt)).attr('stroke', baseColor).attr('stroke-width', 1.5);
             registry[val] = rect;
             const label = kind === 'row'
-              ? `<b>E_row[${val}]</b><br>Learned hidden_size-dim vector encoding ‘this patch is in row ${val}’.`
-              : `<b>E_col[${val}]</b><br>Learned hidden_size-dim vector encoding ‘this patch is in column ${val}’.`;
+              ? `<b>E_row[${val}]</b><br>Vectơ chiều hidden_size học được mã hóa thông tin ‘mảnh này nằm ở hàng ${val}’.`
+              : `<b>E_col[${val}]</b><br>Vectơ chiều hidden_size học được mã hóa thông tin ‘mảnh này nằm ở cột ${val}’.`;
             rect
               .on('mouseenter', function () { d3.select(this).attr('stroke-width', 3.5); })
               .on('mousemove', (e) => showTip(e, label))
@@ -229,7 +229,7 @@
           .attr('fill', tint(PAL.yellow, 0.32)).attr('stroke', PAL.yellow).attr('stroke-width', 2);
         fbox
           .on('mouseenter', function () { d3.select(this).attr('stroke-width', 4); })
-          .on('mousemove', (e) => showTip(e, '<b>Factorized positional embedding</b><br>Add one row vector + one column vector instead of storing all 256 — 65,536 vs 524,288 params (8× fewer).'))
+          .on('mousemove', (e) => showTip(e, '<b>Nhúng vị trí phân tích nhân tử</b><br>Cộng một vectơ hàng + một vectơ cột thay vì lưu trữ toàn bộ 256 vectơ — 65.536 so với 524.288 tham số (ít hơn gấp 8 lần).'))
           .on('mouseleave', function () { d3.select(this).attr('stroke-width', 2); hideTip(); });
         const bcx = boxX + boxW / 2;
         g.append('text').attr('class', 'formula').attr('x', bcx).attr('y', boxY + 32)
@@ -237,7 +237,7 @@
           .text('pos_embed(i, j) = E_row[i] + E_col[j]');
         g.append('text').attr('class', 'formula-sub').attr('x', bcx).attr('y', boxY + 56)
           .attr('text-anchor', 'middle').attr('font-size', 12).style('pointer-events', 'none')
-          .text('Factorized positional embedding for position (i, j)');
+          .text('Nhúng vị trí phân tích nhân tử cho vị trí (i, j)');
       }
 
       function render() {
@@ -248,7 +248,7 @@
       }
       render();
 
-      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover a grid cell to see its row + column factors.'; container.appendChild(h); }
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Di chuột qua một ô lưới để xem các thành phần hàng + cột của nó.'; container.appendChild(h); }
 
       if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
       else { window.addEventListener('resize', render); }

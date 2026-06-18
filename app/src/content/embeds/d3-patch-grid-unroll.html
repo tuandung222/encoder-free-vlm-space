@@ -159,7 +159,7 @@
               .style('pointer-events', 'all');
             frameByIdx[idx] = f;
             f.on('mouseenter', () => highlightPatch(idx))
-              .on('mousemove', (e) => showTip(e, `<b>Patch (row ${row}, col ${col})</b><br>32 × 32 px region<br>Sequence index = ${row} · 16 + ${col} = <b>${idx}</b>`))
+              .on('mousemove', (e) => showTip(e, `<b>Mảnh ảnh (hàng ${row}, cột ${col})</b><br>Vùng kích thước 32 × 32 px<br>Chỉ số chuỗi = ${row} · 16 + ${col} = <b>${idx}</b>`))
               .on('mouseleave', () => { resetPatch(idx); hideTip(); });
           }
         }
@@ -174,18 +174,18 @@
         left.append('text').attr('class', 'caption')
           .attr('x', imgX + S / 2).attr('y', imgY + S + 36)
           .attr('text-anchor', 'middle').attr('font-size', 15)
-          .text('512 × 512 image — 16 × 16 = 256 patches');
+          .text('Ảnh 512 × 512 — 16 × 16 = 256 mảnh ảnh');
         left.append('text').attr('class', 'muted')
           .attr('x', imgX + S / 2).attr('y', imgY + S + 56)
           .attr('text-anchor', 'middle').attr('font-size', 12.5)
-          .text('each patch is a 32 × 32 px region of the image');
+          .text('mỗi mảnh là một vùng 32 × 32 px của ảnh');
 
         // ---- ARROW: image -> sequence ----
         const ax1 = imgX + S + 24, ax2 = 636, ay = imgY + S / 2;
         svg.append('text').attr('class', 'muted')
           .attr('x', (ax1 + ax2) / 2).attr('y', ay - 14)
           .attr('text-anchor', 'middle').attr('font-size', 13)
-          .text('unroll row by row');
+          .text('trải phẳng theo từng hàng');
         svg.append('path')
           .attr('d', `M${ax1},${ay} L${ax2},${ay}`)
           .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2.5)
@@ -212,7 +212,7 @@
             .style('pointer-events', 'all');
           tileByIdx[idx] = t;
           t.on('mouseenter', () => highlightPatch(idx))
-            .on('mousemove', (e) => showTip(e, `<b>Sequence index ${idx}</b><br>Patch (row ${row}, col ${col})`))
+            .on('mousemove', (e) => showTip(e, `<b>Chỉ số chuỗi ${idx}</b><br>Mảnh ảnh (hàng ${row}, cột ${col})`))
             .on('mouseleave', () => { resetPatch(idx); hideTip(); });
           if (showLabel) {
             seq.append('text').attr('class', 'muted')
@@ -239,11 +239,11 @@
         seq.append('text').attr('class', 'muted')
           .attr('x', (seqStart + seqEnd) / 2).attr('y', tileY + tw + 38)
           .attr('text-anchor', 'middle').attr('font-size', 14)
-          .text('flat sequence of 256 patch vectors');
+          .text('chuỗi phẳng gồm 256 vectơ mảnh ảnh');
       }
       render();
 
-      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover a patch — in the image or in the sequence — to see its (row, col) and its position in the flat sequence.'; container.appendChild(h); }
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Di chuột qua mảnh ảnh — trên hình ảnh hoặc trong chuỗi — để xem tọa độ (hàng, cột) và vị trí của nó trong chuỗi phẳng.'; container.appendChild(h); }
 
       if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
       else { window.addEventListener('resize', render); }

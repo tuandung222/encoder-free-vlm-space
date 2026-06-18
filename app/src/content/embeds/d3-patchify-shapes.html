@@ -105,19 +105,19 @@
       }
 
       const boxes = [
-        { title: '(B, C, H, W)', sub: ['(B, 3, 512, 512)', 'input image batch'],
-          tip: '<b>Input image batch</b><br>B images, C=3 colour channels, H×W = 512×512 pixels.' },
-        { title: '(B, C, nh, P, nw, P)', sub: ['(B, 3, 16, 32, 16, 32)', 'split H, W into (num patches, patch size)'],
-          tip: '<b>reshape</b><br>Split H and W into (num patches nh/nw, patch size P=32). No data moved yet.' },
-        { title: '(B, nh, nw, C, P, P)', sub: ['(B, 16, 16, 3, 32, 32)', 'patch indices moved to front'],
-          tip: '<b>permute</b><br>Move the two patch indices to the front and group each patch’s C·P·P pixels together.' },
-        { title: '(B, N, C·P²)', sub: ['(B, 256, 3072)', 'N = 256 flattened patches, each a 3072-dim vector'],
-          tip: '<b>reshape</b><br>Flatten each patch into one contiguous vector. N=256 patches, each 3·32·32 = 3072-dim.' }
+        { title: '(B, C, H, W)', sub: ['(B, 3, 512, 512)', 'lô ảnh đầu vào (batch)'],
+          tip: '<b>Lô ảnh đầu vào</b><br>gồm B ảnh, C=3 kênh màu, H×W = 512×512 pixel.' },
+        { title: '(B, C, nh, P, nw, P)', sub: ['(B, 3, 16, 32, 16, 32)', 'tách H, W thành (số mảnh, kích thước mảnh)'],
+          tip: '<b>reshape (thay đổi hình dạng)</b><br>Tách H và W thành (số mảnh nh/nw, kích thước mảnh P=32). Chưa có dữ liệu nào bị dịch chuyển.' },
+        { title: '(B, nh, nw, C, P, P)', sub: ['(B, 16, 16, 3, 32, 32)', 'chỉ số mảnh được đưa lên trước'],
+          tip: '<b>permute (hoán vị)</b><br>Đưa hai chỉ số mảnh lên phía trước và nhóm các pixel C·P·P của từng mảnh lại với nhau.' },
+        { title: '(B, N, C·P²)', sub: ['(B, 256, 3072)', 'N = 256 mảnh ảnh trải phẳng, mỗi mảnh là một vectơ 3072 chiều'],
+          tip: '<b>reshape (thay đổi hình dạng)</b><br>Trải phẳng từng mảnh ảnh thành một vectơ liên tục. N=256 mảnh, mỗi mảnh có kích thước 3·32·32 = 3072 chiều.' }
       ];
       const ops = [
-        { label: 'reshape', tip: '<b>reshape</b><br>splits/merges axes, no copy' },
-        { label: 'permute', tip: '<b>permute</b><br>reorders axes so each patch’s pixels are contiguous' },
-        { label: 'reshape', tip: '<b>reshape</b><br>splits/merges axes, no copy' }
+        { label: 'reshape', tip: '<b>reshape</b><br>tách/gộp các trục, không sao chép dữ liệu' },
+        { label: 'permute', tip: '<b>permute</b><br>thay đổi thứ tự các trục để các pixel của mỗi mảnh nằm liên tiếp nhau' },
+        { label: 'reshape', tip: '<b>reshape</b><br>tách/gộp các trục, không sao chép dữ liệu' }
       ];
 
       function render() {
@@ -143,7 +143,7 @@
       }
       render();
 
-      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover any box or tag for details.'; container.appendChild(h); }
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Di chuột qua hộp hoặc thẻ bất kỳ để xem chi tiết.'; container.appendChild(h); }
 
       if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
       else { window.addEventListener('resize', render); }

@@ -107,39 +107,39 @@
 
         // Left column inputs (purple)
         const inX = 24, inW = 175, inH = 58;
-        box(g, inX, visRow - inH / 2, inW, inH, ROLE.input, 'Image', null,
-          '<b>Image</b><br>Raw pixels.');
-        box(g, inX, audRow - inH / 2, inW, inH, ROLE.input, 'Audio (waveform)', null,
-          '<b>Audio</b><br>Raw amplitude samples.');
-        box(g, inX, txtRow - inH / 2, inW, inH, ROLE.input, 'Text Tokens', null,
-          '<b>Text tokens</b><br>Go straight into the LM — no encoder needed.');
+        box(g, inX, visRow - inH / 2, inW, inH, ROLE.input, 'Ảnh', null,
+          '<b>Ảnh</b><br>Các pixel thô.');
+        box(g, inX, audRow - inH / 2, inW, inH, ROLE.input, 'Âm thanh (dạng sóng)', null,
+          '<b>Âm thanh</b><br>Các mẫu biên độ thô.');
+        box(g, inX, txtRow - inH / 2, inW, inH, ROLE.input, 'Token văn bản', null,
+          '<b>Token văn bản</b><br>Đi thẳng vào mô hình ngôn ngữ (LM) — không cần bộ mã hóa.');
 
         // Vision encoder (blue) + Audio encoder (teal)
         const encX = 270, encW = 300, encH = 96;
-        box(g, encX, visRow - encH / 2, encW, encH, ROLE.vision, 'Vision Encoder',
-          ['image → visual tokens', 'many attention layers'],
-          '<b>Vision encoder</b><br>Pretrained ViT — turns the image into visual tokens via many attention layers.');
-        box(g, encX, audRow - encH / 2, encW, encH, ROLE.audio, 'Audio Encoder',
-          ['waveform → audio tokens', 'attention layers'],
-          '<b>Audio encoder</b><br>Turns the waveform into audio tokens via attention layers.');
+        box(g, encX, visRow - encH / 2, encW, encH, ROLE.vision, 'Bộ mã hóa Thị giác',
+          ['ảnh → token thị giác', 'nhiều lớp attention'],
+          '<b>Bộ mã hóa thị giác</b><br>ViT được huấn luyện trước — chuyển đổi hình ảnh thành các token thị giác thông qua nhiều lớp attention.');
+        box(g, encX, audRow - encH / 2, encW, encH, ROLE.audio, 'Bộ mã hóa Âm thanh',
+          ['dạng sóng → token âm thanh', 'các lớp attention'],
+          '<b>Bộ mã hóa âm thanh</b><br>Chuyển đổi dạng sóng thành các token âm thanh thông qua các lớp attention.');
 
         // Connectors (green, small)
         const coX = 620, coW = 120, coH = 60;
-        box(g, coX, visRow - coH / 2, coW, coH, ROLE.connector, 'Connector', null,
-          '<b>Connector</b><br>Projects encoder outputs to the LM’s hidden size.');
-        box(g, coX, audRow - coH / 2, coW, coH, ROLE.connector, 'Connector', null,
-          '<b>Connector</b><br>Projects encoder outputs to the LM’s hidden size.');
+        box(g, coX, visRow - coH / 2, coW, coH, ROLE.connector, 'Bộ kết nối', null,
+          '<b>Bộ kết nối</b><br>Chiếu đầu ra của bộ mã hóa lên kích thước ẩn của mô hình ngôn ngữ (LM).');
+        box(g, coX, audRow - coH / 2, coW, coH, ROLE.connector, 'Bộ kết nối', null,
+          '<b>Bộ kết nối</b><br>Chiếu đầu ra của bộ mã hóa lên kích thước ẩn của mô hình ngôn ngữ (LM).');
 
         // Language Model (pink, tall) on the right
         const lmX = 790, lmW = 150, lmTop = visRow - 50, lmBot = txtRow + 50;
         const lmH = lmBot - lmTop, lmMidY = lmTop + lmH / 2;
-        box(g, lmX, lmTop, lmW, lmH, ROLE.lm, 'Language Model', ['(decoder)'],
-          '<b>Language model</b><br>Must wait for both encoders to finish before it can start generating.');
+        box(g, lmX, lmTop, lmW, lmH, ROLE.lm, 'Mô hình Ngôn ngữ', ['(bộ giải mã)'],
+          '<b>Mô hình ngôn ngữ</b><br>Phải chờ cả hai bộ mã hóa hoàn thành trước khi có thể bắt đầu tạo.');
 
         // Output: "Text" pink box to the right of the LM
         const outX = 790, outW = 150, outH = 50, outY = lmBot + 28;
-        box(g, outX, outY, outW, outH, ROLE.lm, 'Text', null,
-          '<b>Output</b><br>Generated text.');
+        box(g, outX, outY, outW, outH, ROLE.lm, 'Văn bản', null,
+          '<b>Đầu ra</b><br>Văn bản được tạo.');
 
         // Arrows: inputs -> encoders
         arrow(g, inX + inW, visRow, encX - 4, visRow);
@@ -167,11 +167,11 @@
       let legend = container.querySelector('.legend');
       if (!legend) {
         legend = document.createElement('div'); legend.className = 'legend';
-        legend.innerHTML = '<div class="legend-title">Legend</div><div class="items"></div>';
+        legend.innerHTML = '<div class="legend-title">Chú giải</div><div class="items"></div>';
         container.appendChild(legend);
       }
       const items = legend.querySelector('.items');
-      const legendData = [['Inputs', ROLE.input], ['Vision Encoder', ROLE.vision], ['Audio Encoder', ROLE.audio], ['Connector', ROLE.connector], ['Language Model', ROLE.lm]];
+      const legendData = [['Đầu vào', ROLE.input], ['Bộ mã hóa Thị giác', ROLE.vision], ['Bộ mã hóa Âm thanh', ROLE.audio], ['Bộ kết nối', ROLE.connector], ['Mô hình Ngôn ngữ', ROLE.lm]];
       items.innerHTML = '';
       legendData.forEach(([name, color]) => {
         const el = document.createElement('span'); el.className = 'item';
@@ -181,7 +181,7 @@
         el.appendChild(sw); el.appendChild(tx); items.appendChild(el);
       });
 
-      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover any block for details.'; container.appendChild(h); }
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Di chuột qua khối bất kỳ để xem chi tiết.'; container.appendChild(h); }
 
       if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
       else { window.addEventListener('resize', render); }

@@ -86,21 +86,21 @@
         [[p1x, 'left'], [sqx + S, 'right']].forEach(([sx]) => {
           const z = g1.append('rect').attr('x', sx).attr('y', p1y).attr('width', stripW).attr('height', p1h)
             .attr('fill', 'var(--surface-bg)').attr('fill-opacity', 0.55);
-          zone(z, '<b>Cropped away</b><br><code>CenterCrop(512)</code> discards these side strips — only the central square is kept.');
+          zone(z, '<b>Đã cắt bỏ</b><br><code>CenterCrop(512)</code> loại bỏ hai dải bên này — chỉ giữ lại hình vuông trung tâm.');
         });
         // dashed crop outline + hitbox
         g1.append('rect').attr('class', 'crop-line').attr('x', sqx).attr('y', sqy).attr('width', S).attr('height', S);
         zone(g1.append('rect').attr('x', sqx).attr('y', sqy).attr('width', S).attr('height', S).attr('fill', 'transparent'),
-          '<b>Central 512×512</b><br>The square the crop keeps. The shorter side was first resized to 512.');
-        svg.append('text').attr('class', 'title').attr('x', p1x + p1w / 2).attr('y', p1y - 28).attr('text-anchor', 'middle').attr('font-size', 16).text('image — larger than 512×512');
-        svg.append('text').attr('class', 'cap').attr('x', p1x + p1w / 2).attr('y', p1y - 10).attr('text-anchor', 'middle').attr('font-size', 12.5).text('shorter side resized to 512');
-        svg.append('text').attr('class', 'cap').attr('x', sqx + S / 2).attr('y', p1y + p1h + 20).attr('text-anchor', 'middle').attr('font-size', 12).text('central 512×512');
+          '<b>Hình vuông trung tâm 512×512</b><br>Hình vuông được giữ lại sau khi cắt. Cạnh ngắn hơn ban đầu được thay đổi kích thước thành 512.');
+        svg.append('text').attr('class', 'title').attr('x', p1x + p1w / 2).attr('y', p1y - 28).attr('text-anchor', 'middle').attr('font-size', 16).text('ảnh ban đầu — lớn hơn 512×512');
+        svg.append('text').attr('class', 'cap').attr('x', p1x + p1w / 2).attr('y', p1y - 10).attr('text-anchor', 'middle').attr('font-size', 12.5).text('cạnh ngắn hơn được thay đổi kích thước thành 512');
+        svg.append('text').attr('class', 'cap').attr('x', sqx + S / 2).attr('y', p1y + p1h + 20).attr('text-anchor', 'middle').attr('font-size', 12).text('phần trung tâm 512×512');
 
         // ---- arrow ----
         const ay = p1y + p1h / 2;
         svg.append('path').attr('d', `M${p1x + p1w + 12},${ay} L${p1x + p1w + 78},${ay}`)
           .attr('fill', 'none').attr('stroke', 'var(--muted-color)').attr('stroke-width', 2.5).attr('marker-end', 'url(#rc-arrow)');
-        svg.append('text').attr('class', 'cap').attr('x', p1x + p1w + 45).attr('y', ay - 12).attr('text-anchor', 'middle').attr('font-size', 12).text('center-crop');
+        svg.append('text').attr('class', 'cap').attr('x', p1x + p1w + 45).attr('y', ay - 12).attr('text-anchor', 'middle').attr('font-size', 12).text('cắt trung tâm');
 
         // ---- Panel 2: the 512×512 result ----
         const S2 = 210, p2x = p1x + p1w + 92, p2y = ay - S2 / 2;
@@ -111,13 +111,13 @@
         const inner2 = g2.append('g').attr('clip-path', `url(#${clip2})`);
         drawFace(inner2, p2x, p2y, S2);
         zone(g2.append('rect').attr('x', p2x).attr('y', p2y).attr('width', S2).attr('height', S2).attr('fill', 'transparent'),
-          '<b>512 × 512</b><br>Every image — big or small — ends up this exact shape, ready to be patchified.');
+          '<b>512 × 512</b><br>Mọi hình ảnh — dù lớn hay nhỏ — đều được đưa về kích thước chính xác này để sẵn sàng phân mảnh (cắt mảnh ảnh).');
         svg.append('text').attr('class', 'title').attr('x', p2x + S2 / 2).attr('y', p2y - 16).attr('text-anchor', 'middle').attr('font-size', 16).text('512 × 512');
-        svg.append('text').attr('class', 'cap').attr('x', p2x + S2 / 2).attr('y', p2y + S2 + 20).attr('text-anchor', 'middle').attr('font-size', 12).text('fed to the embedder');
+        svg.append('text').attr('class', 'cap').attr('x', p2x + S2 / 2).attr('y', p2y + S2 + 20).attr('text-anchor', 'middle').attr('font-size', 12).text('đưa vào bộ nhúng');
       }
       render();
 
-      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover the image regions to see what is kept vs. cropped away.'; container.appendChild(h); }
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Di chuột qua các vùng ảnh để xem phần nào được giữ lại và phần nào bị cắt bỏ.'; container.appendChild(h); }
       if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
       else { window.addEventListener('resize', render); }
     };

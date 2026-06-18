@@ -67,7 +67,7 @@
           .attr('x', x + w / 2).attr('y', h / 2)
           .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
           .attr('font-size', 16).text(String(len));
-        const tipHtml = `<b>Sample</b><br>length = ${len} tokens`;
+        const tipHtml = `<b>Mẫu</b><br>độ dài = ${len} token`;
         grp.on('mouseenter', () => rect.attr('stroke-width', 4))
           .on('mousemove', (e) => showTip(e, tipHtml))
           .on('mouseleave', () => { rect.attr('stroke-width', 2); hideTip(); });
@@ -79,15 +79,15 @@
         // Intro lines (the figure title is provided by the HtmlEmbed figcaption).
         const intro = svg.append('g');
         intro.append('text').attr('class', 'intro').attr('x', BAR_X).attr('y', 40)
-          .attr('font-size', 15).text('Sample lengths (sorted): [800, 700, 500, 400]');
+          .attr('font-size', 15).text('Độ dài các mẫu (đã sắp xếp): [800, 700, 500, 400]');
         intro.append('text').attr('class', 'intro').attr('x', BAR_X).attr('y', 64)
-          .attr('font-size', 15).text('Max knapsack length = 2048');
+          .attr('font-size', 15).text('Độ dài túi tối đa = 2048');
 
         // ---- Knapsack 1 ----
         const k1Top = 112;
         const k1 = svg.append('g');
         k1.append('text').attr('class', 'ks-label').attr('x', BAR_X).attr('y', k1Top - 10)
-          .attr('font-size', 14).text('Knapsack 1:');
+          .attr('font-size', 14).text('Túi 1 (Knapsack 1):');
 
         const bar1 = k1.append('g').attr('transform', `translate(${BAR_X},${k1Top})`);
         // Clip the filled segments to the rounded bar outline.
@@ -117,7 +117,7 @@
           .attr('x', cursor + padW / 2).attr('y', BAR_H / 2)
           .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
           .attr('font-size', 11).text('PAD');
-        const padTip = '<b>Padding</b><br>48 filler tokens so the packed sequence is exactly 2048 long. Added only once, at the end.';
+        const padTip = '<b>Padding (Đệm)</b><br>48 token đệm để chuỗi đã đóng gói có độ dài chính xác là 2048. Chỉ thêm một lần ở cuối.';
         padGrp.on('mouseenter', () => padRect.attr('stroke-width', 3))
           .on('mousemove', (e) => showTip(e, padTip))
           .on('mouseleave', () => { padRect.attr('stroke-width', 1); hideTip(); });
@@ -129,17 +129,17 @@
 
         // Caption below the bar.
         k1.append('text').attr('class', 'caption').attr('x', BAR_X).attr('y', k1Top + BAR_H + 18)
-          .attr('font-size', 12).text('Total = 2000');
+          .attr('font-size', 12).text('Tổng = 2000');
         // Fullness annotation at top-right.
         k1.append('text').attr('x', BAR_X + BAR_W).attr('y', k1Top - 10)
           .attr('text-anchor', 'end').attr('font-size', 13)
-          .attr('fill', PAL.green).text('97.6% full');
+          .attr('fill', PAL.green).text('Đầy 97.6%');
 
         // ---- Knapsack 2 ----
         const k2Top = 262;
         const k2 = svg.append('g');
         k2.append('text').attr('class', 'ks-label').attr('x', BAR_X).attr('y', k2Top - 10)
-          .attr('font-size', 14).text('Knapsack 2:');
+          .attr('font-size', 14).text('Túi 2 (Knapsack 2):');
 
         const bar2 = k2.append('g').attr('transform', `translate(${BAR_X},${k2Top})`);
         // Single yellow segment at the left.
@@ -153,12 +153,12 @@
         // "keep accumulating" note to the right of the segment.
         bar2.append('text').attr('x', w400 + 16).attr('y', BAR_H / 2)
           .attr('dominant-baseline', 'central').attr('font-size', 13)
-          .attr('fill', PAL.yellow).text('(keep accumulating)');
+          .attr('fill', PAL.yellow).text('(tiếp tục tích lũy)');
       }
       render();
 
       // Muted HTML hint below the SVG.
-      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Hover a segment for its length.'; container.appendChild(h); }
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Di chuột qua một phân đoạn để xem độ dài của nó.'; container.appendChild(h); }
 
       if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
       else { window.addEventListener('resize', render); }

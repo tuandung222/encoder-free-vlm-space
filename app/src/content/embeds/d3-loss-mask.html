@@ -60,7 +60,7 @@
         { tok: 'PAD', type: 'pad' },
       ];
       const typeColor = (t) => t === 'img' ? PAL.blue : (t === 'pad' ? PAL.gray : PAL.green);
-      const typeName = (t) => t === 'img' ? 'image token' : (t === 'pad' ? 'padding' : 'text token');
+      const typeName = (t) => t === 'img' ? 'token hình ảnh' : (t === 'pad' ? 'đệm (padding)' : 'token văn bản');
 
       const VBW = 920, VBH = 240;
       const svg = d3.select(container).append('svg')
@@ -75,13 +75,12 @@
       const n = seq.length, boxW = 92, boxH = 54, gap = 18;
       const totalW = n * boxW + (n - 1) * gap;
       const startX = (VBW - totalW) / 2;
-      const boxTop = 150, topY = boxTop;          // arcs spring from the top edge of the boxes
+      const boxTop = 150, topY = boxTop;
       const cx = (i) => startX + i * (boxW + gap) + boxW / 2;
 
       function render() {
         svg.selectAll('g').remove();
 
-        // ---- prediction arcs (token t → token t+1), above the row ----
         const arcs = svg.append('g');
         for (let t = 0; t < n - 1; t++) {
           const tgt = seq[t + 1], keep = tgt.type === 'txt';
@@ -93,20 +92,18 @@
             .attr('fill', 'none').attr('stroke', col).attr('stroke-width', 2)
             .attr('opacity', keep ? 1 : 0.7)
             .attr('marker-end', `url(#${keep ? 'lm-keep' : 'lm-skip'})`);
-          // badge at the apex (apex y ≈ 95 for this quadratic)
           g.append('circle').attr('cx', mid).attr('cy', 95).attr('r', 13)
             .attr('fill', tint(col, 0.4)).attr('stroke', col).attr('stroke-width', 1.6);
           g.append('text').attr('class', 'badge-sym').attr('x', mid).attr('y', 96)
             .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
             .attr('font-size', 15).attr('fill', col).text(keep ? '✓' : '✗');
           const why = keep
-            ? `counts toward the loss (✓).`
-            : `is ${typeName(tgt.type)} → ignored (its label is set to <code>-100</code>).`;
-          g.on('mousemove', (e) => showTip(e, `<b>Position ${t} → ${t + 1}</b><br>Predicts the next token (<code>${tgt.tok}</code>), which ${why}`))
+            ? `được tính vào hàm mất mát (✓).`
+            : `là ${typeName(tgt.type)} → bị bỏ qua (nhãn của nó được đặt thành <code>-100</code>).`;
+          g.on('mousemove', (e) => showTip(e, `<b>Vị trí ${t} → ${t + 1}</b><br>Dự đoán token tiếp theo (<code>${tgt.tok}</code>), và bước này ${why}`))
             .on('mouseleave', hideTip);
         }
 
-        // ---- token row ----
         const row = svg.append('g');
         seq.forEach((d, i) => {
           const x = startX + i * (boxW + gap), color = typeColor(d.type);
@@ -117,22 +114,21 @@
             .attr('text-anchor', 'middle').attr('dominant-baseline', 'central').attr('font-size', 16).text(d.tok);
           g.append('text').attr('class', 'pos').attr('x', x + boxW / 2).attr('y', boxTop + boxH + 18)
             .attr('text-anchor', 'middle').attr('font-size', 12).text('pos ' + i);
-          g.on('mousemove', (e) => showTip(e, `<b>Position ${i}: ${d.tok}</b><br>A ${typeName(d.type)}.`))
+          g.on('mousemove', (e) => showTip(e, `<b>Vị trí ${i}: ${d.tok}</b><br>Là một ${typeName(d.type)}.`))
             .on('mouseleave', hideTip);
         });
       }
       render();
 
-      // legend
       let legend = container.querySelector('.legend');
-      if (!legend) { legend = document.createElement('div'); legend.className = 'legend'; legend.innerHTML = '<div class="legend-title">Legend</div><div class="items"></div>'; container.appendChild(legend); }
+      if (!legend) { legend = document.createElement('div'); legend.className = 'legend'; legend.innerHTML = '<div class="legend-title">Chú giải</div><div class="items"></div>'; container.appendChild(legend); }
       const items = legend.querySelector('.items'); items.innerHTML = '';
-      [['Image token', PAL.blue], ['Text token', PAL.green], ['Padding', PAL.gray], ['✓ prediction counts', KEEP], ['✗ ignored (−100)', SKIP]].forEach(([name, color]) => {
+      [['Token hình ảnh', PAL.blue], ['Token văn bản', PAL.green], ['Đệm (padding)', PAL.gray], ['✓ được tính vào hàm mất mát', KEEP], ['✗ bị bỏ qua (−100)', SKIP]].forEach(([name, color]) => {
         const el = document.createElement('span'); el.className = 'item';
         const sw = document.createElement('span'); sw.className = 'swatch'; sw.style.background = tint(color, 0.4); sw.style.borderColor = color;
         const tx = document.createElement('span'); tx.textContent = name; el.appendChild(sw); el.appendChild(tx); items.appendChild(el);
       });
-      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Each token predicts the next one (arrow). Hover an arrow to see whether that step is scored.'; container.appendChild(h); }
+      if (!container.querySelector('.hint')) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Mỗi token dự đoán token tiếp theo (mũi tên). Di chuột qua một mũi tên để xem bước đó có được tính điểm hay không.'; container.appendChild(h); }
 
       if (window.ResizeObserver) { const ro = new ResizeObserver(() => render()); ro.observe(container); }
       else { window.addEventListener('resize', render); }
