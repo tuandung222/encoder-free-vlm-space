@@ -31,7 +31,8 @@ const siteUrl = spaceId
   : undefined;
 
 export default defineConfig({
-  ...(siteUrl ? { site: siteUrl } : {}),
+  site: 'https://tuandung222.github.io',
+  base: '/encoder-free-vlm-space/',
   output: 'static',
   integrations: [
     mermaid({ theme: 'neutral', autoTheme: true }),
