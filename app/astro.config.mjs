@@ -1,7 +1,6 @@
 import { defineConfig } from 'astro/config';
 import mdx from '@astrojs/mdx';
 import svelte from '@astrojs/svelte';
-import sitemap from '@astrojs/sitemap';
 import mermaid from 'astro-mermaid';
 import compressor from 'astro-compressor';
 import generateLlmsTxt from './plugins/astro/generate-llms-txt.mjs';
@@ -38,7 +37,6 @@ export default defineConfig({
     mermaid({ theme: 'neutral', autoTheme: true }),
     mdx(),
     svelte(),
-    sitemap(),
     generateLlmsTxt(),
     // Precompress output with Gzip only (Brotli disabled due to server module mismatch)
     compressor({ brotli: false, gzip: true })
